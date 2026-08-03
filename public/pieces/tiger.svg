@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="老虎">
+  <defs><linearGradient id="fur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffb14d"/><stop offset="1" stop-color="#d76622"/></linearGradient></defs>
+  <path d="M27 30 14 12c-3-5 2-9 7-6l21 12M93 30l13-18c3-5-2-9-7-6L78 18" fill="url(#fur)" stroke="#542d22" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M22 49c0-24 16-39 38-39s38 15 38 39v25c0 24-16 37-38 37S22 98 22 74Z" fill="url(#fur)" stroke="#542d22" stroke-width="4"/>
+  <path d="M60 20v16M48 23l7 13M72 23l-7 13" fill="none" stroke="#50271f" stroke-width="5" stroke-linecap="round"/>
+  <text x="60" y="52" text-anchor="middle" font-family="serif" font-size="26" font-weight="900" fill="#3d211d">王</text>
+  <ellipse cx="42" cy="60" rx="8" ry="10" fill="#f7eee1" stroke="#402728" stroke-width="3"/>
+  <ellipse cx="78" cy="60" rx="8" ry="10" fill="#f7eee1" stroke="#402728" stroke-width="3"/>
+  <circle cx="43" cy="62" r="3.5" fill="#191a20"/><circle cx="77" cy="62" r="3.5" fill="#191a20"/>
+  <ellipse cx="60" cy="84" rx="28" ry="20" fill="#f6eee5"/>
+  <ellipse cx="47" cy="85" rx="12" ry="14" fill="white" stroke="#d9c7b7" stroke-width="2"/>
+  <ellipse cx="73" cy="85" rx="12" ry="14" fill="white" stroke="#d9c7b7" stroke-width="2"/>
+  <path d="M54 75c3-4 9-4 12 0-1 6-3 8-6 8s-5-2-6-8Z" fill="#2e2020"/>
+  <path d="M60 83v9M60 91c-5-4-8-3-11 0M60 91c5-4 8-3 11 0" fill="none" stroke="#3c2829" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="44" cy="84" r="1.8" fill="#3d2929"/><circle cx="50" cy="89" r="1.8" fill="#3d2929"/><circle cx="76" cy="84" r="1.8" fill="#3d2929"/><circle cx="70" cy="89" r="1.8" fill="#3d2929"/>
+  <path d="M26 50l12 6M94 50l-12 6M28 68l12 2M92 68l-12 2" fill="none" stroke="#52251d" stroke-width="5" stroke-linecap="round"/>
+</svg>

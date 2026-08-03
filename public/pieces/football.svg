@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="足球">
+  <defs>
+    <radialGradient id="ball" cx="35%" cy="28%" r="75%"><stop stop-color="#fff"/><stop offset=".7" stop-color="#e8e9ea"/><stop offset="1" stop-color="#babdc1"/></radialGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity=".35"/></filter>
+  </defs>
+  <circle cx="60" cy="60" r="48" fill="url(#ball)" stroke="#46484c" stroke-width="4" filter="url(#shadow)"/>
+  <path d="m60 34 16 12-6 19H50l-6-19Z" fill="#303237"/>
+  <path d="m60 34 2-18M76 46l18-5M70 65l12 16M50 65 38 81M44 46l-18-5" fill="none" stroke="#4b4d52" stroke-width="4"/>
+  <path d="m62 16 15 3 8 14-9 13-16-12ZM94 41l8 15-5 17-15 8-12-16 6-19ZM82 81l-3 17-15 9-16-5-10-17 12-20h20ZM38 85l-15-7-6-17 9-20 18 5 6 19ZM26 41l9-16 15-8 12-1-2 18-16 12Z" fill="#f5f5f5" stroke="#66686c" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M32 28c10-9 20-13 30-13" fill="none" stroke="white" stroke-opacity=".72" stroke-width="4" stroke-linecap="round"/>
+</svg>

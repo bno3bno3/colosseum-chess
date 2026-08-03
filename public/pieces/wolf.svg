@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="狼">
+  <defs><linearGradient id="wolfFur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4a4a4d"/><stop offset="1" stop-color="#17191d"/></linearGradient></defs>
+  <path d="M31 38 12 13c-2-3 0-7 4-6l29 12M89 38l19-25c2-3 0-7-4-6L75 19" fill="#2a2b2e" stroke="#121319" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M22 48c0-24 16-38 38-38s38 14 38 38v28c0 22-16 34-38 34S22 98 22 76Z" fill="url(#wolfFur)" stroke="#121319" stroke-width="4"/>
+  <path d="M18 18 34 31M102 18 86 31" stroke="#ec9fb2" stroke-width="6" stroke-linecap="round"/>
+  <path d="m31 47 20 7-13 14-16-11M89 47l-20 7 13 14 16-11" fill="#1b1c20"/>
+  <path d="M35 53c6-4 13-3 18 2-4 9-11 11-18 5ZM85 53c-6-4-13-3-18 2 4 9 11 11 18 5Z" fill="#27f260" stroke="#0d7f30" stroke-width="2"/>
+  <ellipse cx="60" cy="84" rx="24" ry="19" fill="#ece9e4"/>
+  <path d="M44 80c6-12 26-12 32 0-3 17-9 25-16 25S47 97 44 80Z" fill="#f7f4ef"/>
+  <path d="M52 77c4-5 12-5 16 0-1 7-4 10-8 10s-7-3-8-10Z" fill="#18191d"/>
+  <path d="M60 87v7M60 94c-5-4-9-3-12 0M60 94c5-4 9-3 12 0" fill="none" stroke="#27282b" stroke-width="3" stroke-linecap="round"/>
+  <path d="M32 72 18 78M35 79l-15 9M88 72l14 6M85 79l15 9" fill="none" stroke="#b6b5b2" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M49 21 56 38M71 21l-7 17" stroke="#111217" stroke-width="5" stroke-linecap="round"/>
+</svg>

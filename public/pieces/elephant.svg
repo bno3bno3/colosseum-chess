@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="大象">
+  <defs>
+    <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9bd9cf"/><stop offset="1" stop-color="#4b9a96"/></linearGradient>
+    <linearGradient id="ear" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffe66d"/><stop offset="1" stop-color="#eeb233"/></linearGradient>
+  </defs>
+  <path d="M43 31C29 16 12 23 10 45c-3 28 13 48 33 35Z" fill="url(#ear)" stroke="#396e70" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M77 31c14-15 31-8 33 14 3 28-13 48-33 35Z" fill="url(#ear)" stroke="#396e70" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M30 45c0-23 13-35 30-35s30 12 30 35v26c0 19-13 34-30 34S30 90 30 71Z" fill="url(#skin)" stroke="#326d72" stroke-width="4"/>
+  <path d="M49 65c0-8 5-13 11-13s11 5 11 13v28c0 11-4 17-11 17-8 0-12-6-12-12 0-5 3-9 8-10V69c0-3-2-5-5-5Z" fill="#5da9a5" stroke="#326d72" stroke-width="3" stroke-linecap="round"/>
+  <path d="M36 76c-5 10-3 18 7 22M84 76c5 10 3 18-7 22" fill="none" stroke="#f5f0db" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="46" cy="49" rx="5" ry="7" fill="#173a3e"/>
+  <ellipse cx="74" cy="49" rx="5" ry="7" fill="#173a3e"/>
+  <circle cx="44" cy="47" r="1.5" fill="white"/><circle cx="72" cy="47" r="1.5" fill="white"/>
+  <path d="M37 31c5-4 10-5 15-2M68 29c5-3 10-2 15 2" fill="none" stroke="#326d72" stroke-width="3" stroke-linecap="round"/>
+  <path d="M55 17c3 5 7 5 10 0" fill="none" stroke="#d7f2e8" stroke-width="3" stroke-linecap="round"/>
+</svg>

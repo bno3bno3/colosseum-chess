@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="暗子">
+  <defs>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#c3925d"/>
+      <stop offset=".48" stop-color="#9a6739"/>
+      <stop offset="1" stop-color="#74421f"/>
+    </linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation=".6"/></filter>
+  </defs>
+  <rect x="8" y="8" width="104" height="104" rx="25" fill="url(#wood)"/>
+  <path d="M17 47 48 16M8 79 77 10M22 108 108 22M60 112l52-52" fill="none" stroke="#e0b77e" stroke-opacity=".17" stroke-width="9"/>
+  <path d="M21 31c21-9 46-8 74 1M19 69c29-9 58-8 84 2M29 95c22-6 42-5 63 1" fill="none" stroke="#5e3219" stroke-opacity=".25" stroke-width="3" stroke-linecap="round" filter="url(#soft)"/>
+  <path d="M44 59c0-11 7-20 16-20s16 9 16 20c0 14-7 24-16 24S44 73 44 59Z" fill="#5c331d" fill-opacity=".2"/>
+  <circle cx="44" cy="42" r="6" fill="#5c331d" fill-opacity=".18"/>
+  <circle cx="76" cy="42" r="6" fill="#5c331d" fill-opacity=".18"/>
+  <circle cx="35" cy="56" r="6" fill="#5c331d" fill-opacity=".18"/>
+  <circle cx="85" cy="56" r="6" fill="#5c331d" fill-opacity=".18"/>
+  <rect x="10" y="10" width="100" height="100" rx="23" fill="none" stroke="#f5d39b" stroke-opacity=".25" stroke-width="4"/>
+</svg>

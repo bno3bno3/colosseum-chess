@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="猫">
+  <defs><linearGradient id="catFur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe56d"/><stop offset="1" stop-color="#f2aa2e"/></linearGradient></defs>
+  <path d="M26 40 18 10c-1-4 3-6 6-4l22 15M94 40l8-30c1-4-3-6-6-4L74 21" fill="url(#catFur)" stroke="#6e4a23" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M22 49c0-25 16-40 38-40s38 15 38 40v24c0 24-16 37-38 37S22 97 22 73Z" fill="url(#catFur)" stroke="#6e4a23" stroke-width="4"/>
+  <path d="M24 16 37 28M96 16 83 28" stroke="#ec8b7c" stroke-width="6" stroke-linecap="round"/>
+  <path d="M50 18 55 37M61 16v21M72 18l-7 19" stroke="#8c5b24" stroke-width="4" stroke-linecap="round"/>
+  <path d="M35 53c5-5 12-5 18 0M67 53c5-5 12-5 18 0" fill="none" stroke="#4c3825" stroke-width="3.5" stroke-linecap="round"/>
+  <ellipse cx="44" cy="59" rx="4" ry="7" fill="#28231f"/>
+  <ellipse cx="76" cy="59" rx="4" ry="7" fill="#28231f"/>
+  <ellipse cx="60" cy="82" rx="22" ry="18" fill="#fff6dd"/>
+  <path d="M53 74c4-4 10-4 14 0-1 6-3 8-7 8s-6-2-7-8Z" fill="#5a3d31"/>
+  <path d="M60 82v8M60 89c-4-3-7-3-10 0M60 89c4-3 7-3 10 0" fill="none" stroke="#5a4239" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M39 74 18 69M39 82 16 83M81 74l21-5M81 82l23 1" fill="none" stroke="#6d4a2b" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

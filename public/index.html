@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#17123f" />
+    <meta name="description" content="局域网双人实时联机斗兽棋" />
+    <title>斗兽棋 · 局域网对战</title>
+    <link rel="icon" href="/pieces/tiger.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=8" />
+  </head>
+  <body>
+    <main id="game-shell" class="game-shell" aria-live="polite">
+      <div class="aurora aurora-a"></div>
+      <div class="aurora aurora-b"></div>
+      <div class="confetti confetti-one"></div>
+      <div class="confetti confetti-two"></div>
+      <div class="confetti confetti-three"></div>
+
+      <header class="title-row">
+        <div id="online-count" class="watch-pill" title="在线人数">
+          <span class="watch-dot"></span><span id="online-number">1</span> 人在线
+        </div>
+        <div class="title-plaque" aria-label="斗兽棋">
+          <span class="crown crown-left">♛</span>
+          <h1>斗兽棋</h1>
+          <span class="crown crown-right">♛</span>
+        </div>
+        <button id="rules-button" class="side-tab rules-tab" type="button">说明</button>
+      </header>
+
+      <section class="players-row" aria-label="对局玩家">
+        <article id="blue-player" class="player-card player-blue">
+          <div class="avatar-wrap"><img src="/pieces/tiger.svg" alt="蓝方头像" /></div>
+          <div class="player-copy">
+            <div class="player-name-line"><strong class="player-name">等待蓝方</strong><span class="me-badge" hidden>我</span></div>
+            <span class="player-state">未入座</span>
+          </div>
+        </article>
+
+        <div id="turn-clock" class="turn-clock">
+          <strong id="timer-number">30</strong><span>秒</span>
+          <div class="turn-arrow"><i></i><i></i></div>
+        </div>
+
+        <article id="red-player" class="player-card player-red">
+          <div class="player-copy align-right">
+            <div class="player-name-line"><span class="me-badge" hidden>我</span><strong class="player-name">等待红方</strong></div>
+            <span class="player-state">未入座</span>
+          </div>
+          <div class="avatar-wrap"><img src="/pieces/dog.svg" alt="红方头像" /></div>
+        </article>
+      </section>
+
+      <section class="arena" aria-label="4乘8斗兽棋棋盘">
+        <aside class="health-rail health-blue" aria-label="蓝方血量">
+          <div class="health-track"><div id="blue-health-fill" class="health-fill"></div></div>
+          <div id="blue-health-label" class="health-label">14</div>
+        </aside>
+
+        <aside class="captured-list captured-blue" aria-label="蓝方吃子列表">
+          <div class="captured-heading"><span>吃</span><b id="captured-blue-count">0</b></div>
+          <div id="captured-blue-pieces" class="captured-pieces"></div>
+        </aside>
+
+        <div class="board-frame">
+          <div id="turn-banner" class="turn-banner">等待对手</div>
+          <div id="board" class="board" role="grid" aria-label="棋盘"></div>
+          <div id="last-action" class="last-action"></div>
+        </div>
+
+        <aside class="health-rail health-red" aria-label="红方血量">
+          <div class="health-track"><div id="red-health-fill" class="health-fill"></div></div>
+          <div id="red-health-label" class="health-label">14</div>
+        </aside>
+
+        <aside class="captured-list captured-red" aria-label="红方吃子列表">
+          <div class="captured-heading"><span>吃</span><b id="captured-red-count">0</b></div>
+          <div id="captured-red-pieces" class="captured-pieces"></div>
+        </aside>
+
+        <button id="quick-message" class="side-tab emoji-tab" type="button" aria-label="发送表情">
+          <span>💬</span><small>表情</small>
+        </button>
+        <button id="resign-button" class="side-tab resign-tab" type="button">
+          <span>⚑</span><small>认输</small>
+        </button>
+        <button id="qa-game-button" class="qa-game-button" type="button" hidden>QA</button>
+      </section>
+
+      <footer class="status-strip">
+        <span id="connection-pill" class="connection-pill connecting"><i></i>连接中</span>
+        <p id="game-hint">正在连接游戏服务器…</p>
+        <button id="leave-game-button" type="button" class="text-button">离开</button>
+      </footer>
+
+      <section id="lobby-screen" class="overlay-screen lobby-screen">
+        <div class="lobby-card glass-card">
+          <div class="lobby-brand">
+            <span class="mini-crown">♛</span>
+            <div><small>局域网实时对战</small><h2>斗兽棋大厅</h2></div>
+          </div>
+
+          <label class="field-label" for="nickname-input">你的昵称</label>
+          <div class="inline-field">
+            <input id="nickname-input" maxlength="12" autocomplete="nickname" placeholder="输入昵称" />
+            <button id="save-name-button" class="compact-button" type="button">保存</button>
+          </div>
+
+          <div class="lobby-actions">
+            <form id="create-room-form" class="action-card create-card">
+              <div class="action-icon">♜</div>
+              <div><strong>创建房间</strong><small>成为房主，等待朋友加入</small></div>
+              <input id="room-name-input" maxlength="18" placeholder="房间名称（可选）" />
+              <button class="primary-button" type="submit">创建对局</button>
+            </form>
+
+            <form id="join-room-form" class="action-card join-card">
+              <div class="action-icon">⚔</div>
+              <div><strong>输入房间码</strong><small>朋友给你的 5 位代码</small></div>
+              <input id="room-code-input" maxlength="5" autocapitalize="characters" placeholder="例如 A7K9P" />
+              <div class="join-buttons">
+                <button class="secondary-button" type="submit">加入房间</button>
+                <button id="spectate-code-button" class="ghost-button" type="button">仅观战</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="room-list-heading">
+            <strong>公开房间</strong><span id="room-count">0 个房间</span>
+          </div>
+          <div id="room-list" class="room-list"></div>
+        </div>
+      </section>
+
+      <section id="room-screen" class="overlay-screen room-screen" hidden>
+        <div class="room-card glass-card">
+          <div class="room-heading">
+            <div><small>匹配房间</small><h2 id="current-room-name">房间</h2></div>
+            <button id="copy-code-button" class="room-code" type="button" title="复制房间码">-----</button>
+          </div>
+
+          <div class="seat-grid">
+            <article id="seat-zero" class="seat-card blue-seat"></article>
+            <div class="versus">VS</div>
+            <article id="seat-one" class="seat-card red-seat"></article>
+          </div>
+
+          <div class="health-setting">
+            <div><strong>初始血量</strong><small>每被吃一枚棋子扣一格</small></div>
+            <div class="stepper">
+              <button id="health-minus" type="button" aria-label="减少血量">−</button>
+              <output id="health-value">14</output>
+              <button id="health-plus" type="button" aria-label="增加血量">＋</button>
+            </div>
+          </div>
+
+          <div id="spectator-line" class="spectator-line">暂无观战者</div>
+          <p id="room-help" class="room-help">把房间码发给朋友，双方确认后自动开始。</p>
+
+          <div class="room-buttons">
+            <button id="take-seat-button" class="secondary-button" type="button" hidden>加入玩家席位</button>
+            <button id="ai-player-button" class="ai-player-button" type="button" hidden>添加 AI 玩家</button>
+            <button id="ready-button" class="primary-button ready-button" type="button">确认准备</button>
+            <button id="qa-button" class="qa-button" type="button" hidden>载入测试棋局</button>
+            <button id="leave-room-button" class="ghost-button" type="button">退出房间</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="end-screen" class="end-screen" hidden>
+        <div class="end-shade"></div>
+        <div class="end-card">
+          <div class="end-crowns"><span>♛</span><span>♛</span></div>
+          <h2 id="end-title">胜利</h2>
+          <p id="end-reason">对方血条空了</p>
+          <div class="end-buttons">
+            <button id="rematch-button" class="primary-button" type="button">再来一局</button>
+            <button id="end-leave-button" class="ghost-button" type="button">返回大厅</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast-region" class="toast-region" role="status" aria-live="assertive"></div>
+
+    <dialog id="rules-dialog" class="modal rules-modal">
+      <form method="dialog">
+        <button class="modal-close" value="close" aria-label="关闭">×</button>
+        <div class="modal-title"><span>♛</span><div><small>HOW TO PLAY</small><h2>斗兽棋说明</h2></div></div>
+        <div class="rules-grid">
+          <article><b>01</b><div><strong>每回合一个动作</strong><p>翻开一枚暗子，或移动一枚己方明子。普通棋子正交走一格，每回合 30 秒。</p></div></article>
+          <article><b>02</b><div><strong>动物强弱</strong><p>象 ＞ 虎 ＞ 狼 ＞ 狗 ＞ 猫 ＞ 鼠；同级互吃，老鼠能吃大象，但不能吃足球。</p></div></article>
+          <article><b>03</b><div><strong>足球隔子打击</strong><p>足球平时走一格；吃子时同行或同列，并且与敌方明子之间恰好隔一枚任意棋子。</p></div></article>
+          <article><b>04</b><div><strong>真人、AI 与观战</strong><p>房主可添加多线程信息集 AI；它会在真人回合提前预判，随后仍有完整 15 秒搜索。大厅观战人数不限。</p></div></article>
+          <article><b>05</b><div><strong>禁止四次重复局面</strong><p>同一棋盘排列与行动方最多出现 3 次；会造成第 4 次重复的移动会被禁用，必须变招。</p></div></article>
+        </div>
+        <button class="primary-button modal-action" value="close">明白了</button>
+      </form>
+    </dialog>
+
+    <dialog id="confirm-dialog" class="modal confirm-modal">
+      <form method="dialog">
+        <div class="warning-icon">!</div>
+        <h2>确定要认输吗？</h2>
+        <p>认输后本局会立即结束，对方获胜。</p>
+        <div class="confirm-actions">
+          <button class="ghost-button" value="cancel">继续战斗</button>
+          <button id="confirm-resign" class="danger-button" value="confirm">确认认输</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js?v=10"></script>
+  </body>
+</html>

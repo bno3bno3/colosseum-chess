@@ -1,0 +1,16 @@
+{
+  "name": "lan-jungle-chess",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "局域网实时联机 4x8 斗兽棋",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "node --watch server/server.mjs",
+    "start": "node server/server.mjs",
+    "test": "node --test --test-reporter=spec tests/*.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage tests/*.test.mjs"
+  }
+}
