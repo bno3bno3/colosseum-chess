@@ -46,3 +46,22 @@ test("局域网 HTTP 会话 ID 有兼容降级，重复局面禁着有前端提�
   assert.match(app, /第 4 次出现/);
   assert.match(css, /\.board-cell\.repetition-forbidden::after/);
 });
+
+test("历史对局列表和可调统一间隔的逐步回放控件完整", () => {
+  for (const id of [
+    "history-button",
+    "history-list",
+    "replay-board",
+    "replay-progress",
+    "replay-play-button",
+    "replay-previous-button",
+    "replay-next-button",
+    "replay-interval",
+  ]) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(app, /type:\s*"history_list"/);
+  assert.match(app, /type:\s*"history_get"/);
+  assert.match(app, /setInterval\(\(\) => setReplayIndex/);
+  assert.match(app, /replayIntervalMs/);
+  assert.match(css, /\.history-item/);
+  assert.match(css, /\.replay-board/);
+});

@@ -156,6 +156,55 @@ export function recordCurrentPosition(game) {
   return game.positionCounts[signature];
 }
 
+function replayBoard(board) {
+  return board.map((piece) => {
+    if (!piece) return null;
+    if (!piece.revealed) return { hidden: true };
+    return { type: piece.type, color: piece.color, revealed: true };
+  });
+}
+
+export function replayFrameFor(game) {
+  return {
+    sequence: Math.max(0, game.replayFrames?.length ?? 0),
+    at: game.lastAction?.at ?? game.startedAt,
+    action: game.lastAction ? structuredClone(game.lastAction) : null,
+    board: replayBoard(game.board),
+    health: { ...game.health },
+    capturedBy: {
+      blue: game.capturedBy.blue.map((piece) => ({ ...piece })),
+      red: game.capturedBy.red.map((piece) => ({ ...piece })),
+    },
+    turn: game.turn,
+    status: game.status,
+    winner: game.winner,
+    loser: game.loser,
+    endReason: game.endReason,
+  };
+}
+
+export function appendReplayFrame(game) {
+  if (!game.replayFrames) game.replayFrames = [];
+  const frame = replayFrameFor(game);
+  frame.sequence = game.replayFrames.length;
+  game.replayFrames.push(frame);
+  return frame;
+}
+
+export function resetReplayFrames(game) {
+  game.replayFrames = [];
+  return appendReplayFrame(game);
+}
+
+export function refreshLatestReplayFrame(game) {
+  if (!game.replayFrames?.length) return appendReplayFrame(game);
+  const sequence = game.replayFrames.length - 1;
+  const frame = replayFrameFor(game);
+  frame.sequence = sequence;
+  game.replayFrames[sequence] = frame;
+  return frame;
+}
+
 export function wouldCreateFourthPosition(game, from, to, color = game.turn) {
   if (!game.positionCounts || !isBoardIndex(from) || !isBoardIndex(to)) return false;
   const attacker = game.board[from];
@@ -214,8 +263,10 @@ export function createGame({
     startedAt: now,
     endedAt: null,
     positionCounts: Object.create(null),
+    replayFrames: [],
   };
   recordCurrentPosition(game);
+  appendReplayFrame(game);
   return game;
 }
 
@@ -244,6 +295,7 @@ function completeTurn(game, action, now) {
   } else {
     game.turnDeadline = null;
   }
+  appendReplayFrame(game);
   return game;
 }
 
@@ -337,6 +389,7 @@ export function resignGame(game, color, { reason = "resign", now = Date.now() } 
   game.version += 1;
   game.turnDeadline = null;
   game.lastAction = { type: reason, color, at: now };
+  appendReplayFrame(game);
   return game;
 }
 
@@ -348,6 +401,7 @@ export function processTurnTimeout(game, now = Date.now()) {
   game.turnDeadline = now + game.turnDurationMs;
   game.lastAction = { type: "timeout", color: skipped, at: now };
   recordCurrentPosition(game);
+  appendReplayFrame(game);
   return true;
 }
 

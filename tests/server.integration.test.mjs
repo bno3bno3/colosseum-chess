@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createGameServer } from "../server/server.mjs";
 
 function socketClient(url, sessionId, nickname) {
@@ -99,4 +102,53 @@ test("HTTP 与两个真实 WebSocket 客户端可完成大厅到首步操作", a
 
   a.socket.close();
   b.socket.close();
+});
+
+test("已结束对局通过 WebSocket 查询并在服务器重启后继续存在", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "jungle-server-history-"));
+  const historyFile = join(directory, "history.json");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+
+  const firstServer = createGameServer({ historyFile, turnDurationMs: 2_000 });
+  t.after(() => firstServer.close());
+  const firstAddress = await firstServer.listen({ port: 0, host: "127.0.0.1" });
+  const firstUrl = `ws://127.0.0.1:${firstAddress.port}/ws`;
+  const blue = socketClient(firstUrl, "history-int-blue", "持久蓝方");
+  const red = socketClient(firstUrl, "history-int-red", "持久红方");
+  await Promise.all([blue.opened, red.opened]);
+  await Promise.all([
+    blue.waitFor((message) => message.type === "welcome"),
+    red.waitFor((message) => message.type === "welcome"),
+  ]);
+
+  blue.send({ type: "create_room", name: "重启保留测试" });
+  const created = await blue.waitFor((message) => message.type === "room" && message.room.name === "重启保留测试");
+  red.send({ type: "join_room", roomId: created.room.id });
+  await red.waitFor((message) => message.type === "room" && message.room.id === created.room.id);
+  blue.send({ type: "set_ready", ready: true });
+  red.send({ type: "set_ready", ready: true });
+  const playing = await blue.waitFor((message) => message.type === "room" && message.room.game?.status === "playing");
+  blue.send({ type: "resign", version: playing.room.game.version });
+  await blue.waitFor((message) => message.type === "room" && message.room.game?.status === "finished");
+  blue.send({ type: "history_list" });
+  const beforeRestart = await blue.waitFor((message) => message.type === "history_list" && message.records.length === 1);
+  const recordId = beforeRestart.records[0].id;
+  blue.send({ type: "history_get", id: recordId });
+  const fullRecord = await blue.waitFor((message) => message.type === "history_record" && message.record.id === recordId);
+  assert.equal(fullRecord.record.frames.at(-1).status, "finished");
+  blue.socket.close();
+  red.socket.close();
+  await firstServer.close();
+
+  const secondServer = createGameServer({ historyFile });
+  t.after(() => secondServer.close());
+  const secondAddress = await secondServer.listen({ port: 0, host: "127.0.0.1" });
+  const viewer = socketClient(`ws://127.0.0.1:${secondAddress.port}/ws`, "history-viewer", "查看者");
+  await viewer.opened;
+  await viewer.waitFor((message) => message.type === "welcome");
+  viewer.send({ type: "history_list" });
+  const afterRestart = await viewer.waitFor((message) => message.type === "history_list" && message.records.length === 1);
+  assert.equal(afterRestart.records[0].id, recordId);
+  assert.equal(afterRestart.records[0].roomName, "重启保留测试");
+  viewer.socket.close();
 });

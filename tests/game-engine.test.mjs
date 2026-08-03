@@ -243,3 +243,24 @@ test("重复局面按棋子排列和行动方计数，不受棋子 ID 影响", (
   assert.equal(positionSignature(first, "red"), positionSignature(second, "red"));
   assert.notEqual(positionSignature(first, "blue"), positionSignature(first, "red"));
 });
+
+test("回放帧记录初始画面和每一步，且从不泄露暗子身份", () => {
+  const board = emptyBoard();
+  board[0] = piece("elephant", "blue", false, "secret-elephant");
+  board[1] = piece("cat", "red", false, "secret-cat");
+  const game = fixedGame(board);
+  assert.equal(game.replayFrames.length, 1);
+  assert.deepEqual(game.replayFrames[0].board[0], { hidden: true });
+  assert.equal(JSON.stringify(game.replayFrames[0]).includes("secret-elephant"), false);
+
+  flipPiece(game, "blue", 0, { version: 1, now: 2_000 });
+  assert.equal(game.replayFrames.length, 2);
+  assert.equal(game.replayFrames[1].action.type, "flip");
+  assert.equal(game.replayFrames[1].board[0].type, "elephant");
+  assert.deepEqual(game.replayFrames[1].board[1], { hidden: true });
+
+  resignGame(game, "red", { now: 3_000 });
+  assert.equal(game.replayFrames.length, 3);
+  assert.equal(game.replayFrames[2].status, "finished");
+  assert.equal(game.replayFrames[2].winner, "blue");
+});

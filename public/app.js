@@ -81,6 +81,24 @@ const elements = {
   toast: $("#toast-region"),
   rules: $("#rules-dialog"),
   confirm: $("#confirm-dialog"),
+  historyScreen: $("#history-screen"),
+  historyList: $("#history-list"),
+  replayScreen: $("#replay-screen"),
+  replayRoomName: $("#replay-room-name"),
+  replayDate: $("#replay-date"),
+  replayBluePlayer: $("#replay-blue-player"),
+  replayRedPlayer: $("#replay-red-player"),
+  replayBlueHealth: $("#replay-blue-health"),
+  replayRedHealth: $("#replay-red-health"),
+  replayBoard: $("#replay-board"),
+  replayAction: $("#replay-action"),
+  replayStepLabel: $("#replay-step-label"),
+  replayProgress: $("#replay-progress"),
+  replayPlay: $("#replay-play-button"),
+  replayPrevious: $("#replay-previous-button"),
+  replayNext: $("#replay-next-button"),
+  replayInterval: $("#replay-interval"),
+  replayIntervalLabel: $("#replay-interval-label"),
 };
 
 const savedSession = sessionStorage.getItem("jungle-session");
@@ -101,6 +119,14 @@ const state = {
   qaEnabled: false,
   pendingAnimation: null,
   lastTimerSecond: null,
+  historyOpen: false,
+  historyRecords: [],
+  replay: null,
+  replayIndex: 0,
+  replayIntervalMs: 1_000,
+  replayTimer: null,
+  replayPlaying: false,
+  lastRenderedReplayIndex: null,
 };
 
 sessionStorage.setItem("jungle-session", state.sessionId);
@@ -218,6 +244,19 @@ function handleMessage(message) {
       if (message.code === "stale_version") state.selected = null;
       renderBoard();
       break;
+    case "history_list":
+      state.historyRecords = message.records || [];
+      state.historyOpen = true;
+      render();
+      break;
+    case "history_record":
+      stopReplay();
+      state.historyOpen = true;
+      state.replay = message.record || null;
+      state.replayIndex = 0;
+      state.lastRenderedReplayIndex = null;
+      render();
+      break;
     case "pong":
       updateClock(message.serverNow);
       break;
@@ -229,7 +268,9 @@ function handleMessage(message) {
 function render() {
   const room = state.room;
   const game = room?.game;
-  elements.lobby.hidden = Boolean(room);
+  elements.lobby.hidden = Boolean(room) || state.historyOpen;
+  elements.historyScreen.hidden = !state.historyOpen || Boolean(state.replay);
+  elements.replayScreen.hidden = !state.replay;
   elements.roomScreen.hidden = !room || Boolean(game);
   elements.endScreen.hidden = !game || game.status !== "finished";
   elements.resign.hidden = !game || game.status !== "playing" || !game.youColor;
@@ -246,6 +287,164 @@ function render() {
   renderTimer();
   renderEnd();
   renderStatus();
+  renderHistory();
+  renderReplay();
+}
+
+function formatHistoryDate(timestamp) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function historyPlayer(record, color) {
+  return record.players?.find((player) => player.color === color) || { nickname: color === "blue" ? "蓝方" : "红方" };
+}
+
+function renderHistory() {
+  if (!state.historyOpen || state.replay) return;
+  elements.historyList.replaceChildren();
+  if (!state.historyRecords.length) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.innerHTML = "<span>▣</span><strong>还没有历史对局</strong><small>完成一局后会自动保存在这里</small>";
+    elements.historyList.append(empty);
+    return;
+  }
+
+  for (const record of state.historyRecords) {
+    const blue = historyPlayer(record, "blue");
+    const red = historyPlayer(record, "red");
+    const winner = historyPlayer(record, record.winner);
+    const card = document.createElement("article");
+    card.className = "history-item";
+    const title = document.createElement("div");
+    title.className = "history-item-title";
+    const name = document.createElement("strong");
+    name.textContent = record.roomName || "斗兽棋对局";
+    const date = document.createElement("time");
+    date.textContent = formatHistoryDate(record.endedAt);
+    title.append(name, date);
+
+    const matchup = document.createElement("div");
+    matchup.className = "history-matchup";
+    matchup.innerHTML = `<span class="blue-name"></span><b>VS</b><span class="red-name"></span>`;
+    matchup.querySelector(".blue-name").textContent = `${blue.nickname}${blue.isAI ? " · AI" : ""}`;
+    matchup.querySelector(".red-name").textContent = `${red.nickname}${red.isAI ? " · AI" : ""}`;
+
+    const footer = document.createElement("div");
+    footer.className = "history-item-footer";
+    const result = document.createElement("span");
+    result.textContent = `${winner.nickname} 获胜 · ${record.stepCount} 步`;
+    const replay = document.createElement("button");
+    replay.type = "button";
+    replay.className = "history-replay-button";
+    replay.textContent = "回放";
+    replay.setAttribute("aria-label", `回放：${record.roomName || "斗兽棋对局"}，${blue.nickname} 对 ${red.nickname}`);
+    replay.addEventListener("click", () => send({ type: "history_get", id: record.id }));
+    footer.append(result, replay);
+    card.append(title, matchup, footer);
+    elements.historyList.append(card);
+  }
+}
+
+function replayFrame() {
+  return state.replay?.frames?.[state.replayIndex] || null;
+}
+
+function renderReplayBoard(frame, animate) {
+  elements.replayBoard.replaceChildren();
+  const action = frame?.action;
+  (frame?.board || []).forEach((piece, index) => {
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "board-cell";
+    cell.disabled = true;
+    cell.setAttribute("role", "gridcell");
+    const row = Math.floor(index / 4);
+    const col = index % 4;
+    cell.classList.add((row + col) % 2 === 0 ? "light-square" : "dark-square");
+    if (piece) {
+      const tile = document.createElement("span");
+      tile.className = "piece-tile";
+      const image = document.createElement("img");
+      image.draggable = false;
+      if (piece.hidden) {
+        tile.classList.add("hidden-tile");
+        image.src = "/pieces/hidden.svg";
+        image.alt = "未翻开的棋子";
+      } else {
+        tile.classList.add(`${piece.color}-tile`, "revealed-tile");
+        image.src = `/pieces/${piece.type}.svg`;
+        image.alt = `${piece.color === "blue" ? "蓝方" : "红方"}${PIECE_NAMES[piece.type]}`;
+      }
+      tile.append(image);
+      if (animate && action?.type === "flip" && action.index === index) tile.classList.add("just-flipped");
+      if (animate && ["move", "capture"].includes(action?.type) && action.to === index) {
+        const fromRow = Math.floor(action.from / 4);
+        const fromCol = action.from % 4;
+        tile.style.setProperty("--move-x", `${(fromCol - col) * 120}%`);
+        tile.style.setProperty("--move-y", `${(fromRow - row) * 120}%`);
+        tile.classList.add(action.type === "capture" ? "just-captured" : "just-moved");
+      }
+      cell.append(tile);
+    } else {
+      cell.classList.add("empty-cell");
+    }
+    elements.replayBoard.append(cell);
+  });
+}
+
+function renderReplay() {
+  const record = state.replay;
+  if (!record) return;
+  const frames = record.frames || [];
+  const frame = replayFrame();
+  if (!frame) return;
+  const blue = historyPlayer(record, "blue");
+  const red = historyPlayer(record, "red");
+  elements.replayRoomName.textContent = record.roomName || "对局回放";
+  elements.replayDate.textContent = formatHistoryDate(record.endedAt);
+  elements.replayBluePlayer.textContent = `${blue.nickname}${blue.isAI ? " · AI" : ""}`;
+  elements.replayRedPlayer.textContent = `${red.nickname}${red.isAI ? " · AI" : ""}`;
+  elements.replayBlueHealth.textContent = `${frame.health.blue}/${record.initialHealth}`;
+  elements.replayRedHealth.textContent = `${frame.health.red}/${record.initialHealth}`;
+  elements.replayAction.textContent = describeAction(frame.action) || "棋局开始";
+  elements.replayStepLabel.textContent = `${state.replayIndex} / ${Math.max(0, frames.length - 1)}`;
+  elements.replayProgress.max = String(Math.max(0, frames.length - 1));
+  elements.replayProgress.value = String(state.replayIndex);
+  elements.replayPrevious.disabled = state.replayIndex <= 0;
+  elements.replayNext.disabled = state.replayIndex >= frames.length - 1;
+  elements.replayPlay.textContent = state.replayPlaying ? "暂停" : state.replayIndex >= frames.length - 1 ? "重新播放" : "播放";
+  const animate = state.lastRenderedReplayIndex !== state.replayIndex;
+  renderReplayBoard(frame, animate);
+  state.lastRenderedReplayIndex = state.replayIndex;
+}
+
+function stopReplay() {
+  clearInterval(state.replayTimer);
+  state.replayTimer = null;
+  state.replayPlaying = false;
+}
+
+function setReplayIndex(index) {
+  const last = Math.max(0, (state.replay?.frames?.length ?? 1) - 1);
+  state.replayIndex = Math.max(0, Math.min(last, Number(index) || 0));
+  if (state.replayIndex >= last) stopReplay();
+  renderReplay();
+}
+
+function startReplay() {
+  if (!state.replay?.frames?.length) return;
+  if (state.replayIndex >= state.replay.frames.length - 1) state.replayIndex = 0;
+  stopReplay();
+  state.replayPlaying = true;
+  state.replayTimer = setInterval(() => setReplayIndex(state.replayIndex + 1), state.replayIntervalMs);
+  renderReplay();
 }
 
 function renderLobby() {
@@ -706,6 +905,55 @@ function changeHealth(delta) {
 $("#create-room-form").addEventListener("submit", (event) => {
   event.preventDefault();
   send({ type: "create_room", name: elements.roomName.value });
+});
+
+$("#history-button").addEventListener("click", () => {
+  state.historyOpen = true;
+  state.replay = null;
+  render();
+  send({ type: "history_list" });
+});
+
+$("#history-close-button").addEventListener("click", () => {
+  stopReplay();
+  state.historyOpen = false;
+  state.replay = null;
+  render();
+});
+
+$("#replay-back-button").addEventListener("click", () => {
+  stopReplay();
+  state.replay = null;
+  state.lastRenderedReplayIndex = null;
+  render();
+  send({ type: "history_list" });
+});
+
+elements.replayPrevious.addEventListener("click", () => {
+  stopReplay();
+  setReplayIndex(state.replayIndex - 1);
+});
+elements.replayNext.addEventListener("click", () => {
+  stopReplay();
+  setReplayIndex(state.replayIndex + 1);
+});
+elements.replayPlay.addEventListener("click", () => {
+  if (state.replayPlaying) {
+    stopReplay();
+    renderReplay();
+  } else {
+    startReplay();
+  }
+});
+elements.replayProgress.addEventListener("input", () => {
+  stopReplay();
+  setReplayIndex(elements.replayProgress.value);
+});
+elements.replayInterval.addEventListener("input", () => {
+  const wasPlaying = state.replayPlaying;
+  state.replayIntervalMs = Number(elements.replayInterval.value);
+  elements.replayIntervalLabel.textContent = `${(state.replayIntervalMs / 1_000).toFixed(1)} 秒/步`;
+  if (wasPlaying) startReplay();
 });
 
 $("#join-room-form").addEventListener("submit", (event) => {

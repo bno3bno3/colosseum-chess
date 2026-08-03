@@ -208,3 +208,52 @@ test("对局中主动退出按认输处理，断线在宽限期内可重连", as
   assert.equal(room.game.winner, "red");
   assert.equal(room.game.endReason, "leave");
 });
+
+test("结束对局只持久化一次并可通过协议查看列表与完整回放", () => {
+  const stored = [];
+  const historyStore = {
+    append(record) {
+      if (stored.some((entry) => entry.id === record.id)) return false;
+      stored.push(structuredClone(record));
+      return true;
+    },
+    list() {
+      return stored.map((record) => ({
+        id: record.id,
+        roomName: record.roomName,
+        endedAt: record.endedAt,
+        players: record.players,
+        winner: record.winner,
+        endReason: record.endReason,
+        stepCount: record.frames.length - 1,
+      }));
+    },
+    get(id) { return structuredClone(stored.find((record) => record.id === id) ?? null); },
+  };
+  let clock = 10_000;
+  const manager = new RoomManager({ historyStore, rng: () => 0, now: () => clock });
+  const blue = attach(manager, "history-blue", "历史蓝方");
+  const red = attach(manager, "history-red", "历史红方");
+  const room = manager.createRoom(blue.client, "历史房间");
+  manager.joinRoom(red.client, room.id);
+  manager.setReady(blue.client, true);
+  manager.setReady(red.client, true);
+  manager.performGameAction(blue.client, { type: "flip", index: 0, version: room.game.version });
+  clock += 2_000;
+  manager.performGameAction(red.client, { type: "resign", version: room.game.version });
+
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].roomName, "历史房间");
+  assert.deepEqual(stored[0].players.map((player) => player.nickname), ["历史蓝方", "历史红方"]);
+  assert.equal(stored[0].frames.length, 3);
+  assert.equal(JSON.stringify(stored[0].frames[0].board).includes("elephant"), false);
+  manager.recordFinishedGame(room);
+  assert.equal(stored.length, 1);
+
+  manager.handle(blue.client, { type: "history_list" });
+  const listMessage = blue.messages.findLast((message) => message.type === "history_list");
+  assert.equal(listMessage.records[0].stepCount, 2);
+  manager.handle(blue.client, { type: "history_get", id: stored[0].id });
+  const recordMessage = blue.messages.findLast((message) => message.type === "history_record");
+  assert.equal(recordMessage.record.frames.at(-1).endReason, "resign");
+});

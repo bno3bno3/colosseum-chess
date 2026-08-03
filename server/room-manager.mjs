@@ -1,5 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import {
+  COLORS,
   GameRuleError,
   colorForPlayer,
   createGame,
@@ -10,6 +11,8 @@ import {
   movePiece,
   processTurnTimeout,
   recordCurrentPosition,
+  refreshLatestReplayFrame,
+  resetReplayFrames,
   resignGame,
 } from "./game-engine.mjs";
 import {
@@ -57,6 +60,7 @@ export class RoomManager {
     aiSearchTimeMs = DEFAULT_AI_SEARCH_MS,
     aiWorkerCount = defaultAIWorkerCount(),
     aiQuantumMs = AI_SEARCH_QUANTUM_MS,
+    historyStore = null,
     rng = Math.random,
     now = () => Date.now(),
   } = {}) {
@@ -72,6 +76,7 @@ export class RoomManager {
     this.aiQuantumMs = aiQuantumMs;
     this.aiScheduler = null;
     this.aiSearches = new Map();
+    this.historyStore = historyStore;
     this.rng = rng;
     this.now = now;
   }
@@ -159,6 +164,52 @@ export class RoomManager {
 
   notice(client, message, tone = "info") {
     this.send(client, { type: "notice", message, tone });
+  }
+
+  sendHistoryList(client) {
+    this.send(client, {
+      type: "history_list",
+      records: this.historyStore?.list() ?? [],
+    });
+  }
+
+  sendHistoryRecord(client, id) {
+    const record = this.historyStore?.get(String(id ?? "")) ?? null;
+    if (!record) throw new LobbyError("history_not_found", "没有找到这局历史对局");
+    this.send(client, { type: "history_record", record });
+  }
+
+  recordFinishedGame(room) {
+    const game = room?.game;
+    if (!this.historyStore || !game || game.status !== "finished" || game.historyPersisted) return false;
+    const participants = room.gameParticipants ?? {};
+    const record = {
+      schemaVersion: 1,
+      id: game.id,
+      roomId: room.id,
+      roomName: room.name,
+      startedAt: game.startedAt,
+      endedAt: game.endedAt ?? this.now(),
+      initialHealth: game.initialHealth,
+      players: COLORS.map((color) => ({
+        color,
+        id: participants[color]?.id ?? game.players[color],
+        nickname: participants[color]?.nickname ?? this.clients.get(game.players[color])?.nickname ?? "玩家",
+        isAI: Boolean(participants[color]?.isAI ?? this.clients.get(game.players[color])?.isAI),
+      })),
+      winner: game.winner,
+      loser: game.loser,
+      endReason: game.endReason,
+      frames: structuredClone(game.replayFrames ?? []),
+    };
+    try {
+      this.historyStore.append(record);
+      game.historyPersisted = true;
+      return true;
+    } catch (error) {
+      console.error("保存历史对局失败", error);
+      return false;
+    }
   }
 
   fail(client, error) {
@@ -350,6 +401,7 @@ export class RoomManager {
         const color = colorForPlayer(room.game, client.id);
         if (color) resignGame(room.game, color, { reason, now: this.now() });
         room.status = "finished";
+        this.recordFinishedGame(room);
         this.cancelAISearch(room);
         this.broadcastRoom(room);
       }
@@ -411,6 +463,11 @@ export class RoomManager {
       now: this.now(),
     });
     room.status = "playing";
+    room.gameParticipants = Object.fromEntries(COLORS.map((color) => {
+      const id = room.game.players[color];
+      const player = this.clients.get(id);
+      return [color, { id, nickname: player?.nickname ?? "玩家", isAI: Boolean(player?.isAI) }];
+    }));
     room.aiThinking = false;
     room.aiPondering = false;
     room.aiPonderJobId = null;
@@ -435,7 +492,10 @@ export class RoomManager {
       resignGame(room.game, color, { reason: "resign", now: this.now() });
     }
 
-    if (room.game.status === "finished") room.status = "finished";
+    if (room.game.status === "finished") {
+      room.status = "finished";
+      this.recordFinishedGame(room);
+    }
     const ponderResult = room.game.status === "playing" ? this.harvestAIPonder(room) : null;
     if (room.game.status === "playing") this.scheduleAI(room, this.now(), ponderResult);
     else {
@@ -486,6 +546,7 @@ export class RoomManager {
     room.game.lastAction = { type: "qa_scenario", color, at: this.now() };
     room.game.positionCounts = Object.create(null);
     recordCurrentPosition(room.game);
+    resetReplayFrames(room.game);
     room.status = "playing";
     this.scheduleAI(room, this.now());
     this.broadcastRoom(room);
@@ -614,10 +675,12 @@ export class RoomManager {
       quanta: result?.quanta ?? null,
       ponderIterations: result?.ponderIterations ?? null,
     };
+    refreshLatestReplayFrame(game);
     room.aiThinking = false;
 
     if (game.status === "finished") {
       room.status = "finished";
+      this.recordFinishedGame(room);
       room.aiMoveAt = null;
       this.broadcastLobby();
     } else {
@@ -749,6 +812,12 @@ export class RoomManager {
           break;
         case "qa_scenario":
           this.loadQaScenario(client);
+          break;
+        case "history_list":
+          this.sendHistoryList(client);
+          break;
+        case "history_get":
+          this.sendHistoryRecord(client, message.id);
           break;
         case "ping":
           this.send(client, { type: "pong", clientNow: message.clientNow, serverNow: this.now() });

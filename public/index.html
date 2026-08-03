@@ -7,7 +7,7 @@
     <meta name="description" content="局域网双人实时联机斗兽棋" />
     <title>斗兽棋 · 局域网对战</title>
     <link rel="icon" href="/pieces/tiger.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=8" />
+    <link rel="stylesheet" href="/styles.css?v=9" />
   </head>
   <body>
     <main id="game-shell" class="game-shell" aria-live="polite">
@@ -107,6 +107,8 @@
             <button id="save-name-button" class="compact-button" type="button">保存</button>
           </div>
 
+          <button id="history-button" class="history-entry-button" type="button"><span>▣</span> 查看历史对局</button>
+
           <div class="lobby-actions">
             <form id="create-room-form" class="action-card create-card">
               <div class="action-icon">♜</div>
@@ -130,6 +132,57 @@
             <strong>公开房间</strong><span id="room-count">0 个房间</span>
           </div>
           <div id="room-list" class="room-list"></div>
+        </div>
+      </section>
+
+      <section id="history-screen" class="overlay-screen history-screen" hidden>
+        <div class="history-card glass-card">
+          <div class="history-heading">
+            <div><small>GAME ARCHIVE</small><h2>历史对局</h2></div>
+            <button id="history-close-button" class="ghost-button" type="button">返回大厅</button>
+          </div>
+          <p class="history-help">所有已结束对局都会保存在这台服务器上，重启后仍可查看。</p>
+          <div id="history-list" class="history-list"></div>
+        </div>
+      </section>
+
+      <section id="replay-screen" class="overlay-screen replay-screen" hidden>
+        <div class="replay-card glass-card">
+          <div class="replay-heading">
+            <button id="replay-back-button" class="ghost-button" type="button">‹ 对局列表</button>
+            <div><small>GAME REPLAY</small><h2 id="replay-room-name">对局回放</h2></div>
+            <time id="replay-date"></time>
+          </div>
+
+          <div class="replay-players">
+            <strong id="replay-blue-player" class="blue-name">蓝方</strong>
+            <span>VS</span>
+            <strong id="replay-red-player" class="red-name">红方</strong>
+          </div>
+
+          <div class="replay-stage">
+            <div class="replay-health replay-health-blue"><span>蓝方</span><b id="replay-blue-health">14/14</b></div>
+            <div id="replay-board" class="board replay-board" role="grid" aria-label="历史对局回放棋盘"></div>
+            <div class="replay-health replay-health-red"><span>红方</span><b id="replay-red-health">14/14</b></div>
+          </div>
+
+          <div class="replay-action-row">
+            <strong id="replay-action">棋局开始</strong>
+            <span id="replay-step-label">0 / 0</span>
+          </div>
+          <input id="replay-progress" class="replay-progress" type="range" min="0" max="0" value="0" aria-label="回放进度" />
+
+          <div class="replay-controls">
+            <button id="replay-previous-button" class="ghost-button" type="button" aria-label="上一步">◀</button>
+            <button id="replay-play-button" class="primary-button" type="button">播放</button>
+            <button id="replay-next-button" class="ghost-button" type="button" aria-label="下一步">▶</button>
+          </div>
+
+          <label class="replay-speed" for="replay-interval">
+            <span>统一步进间隔</span>
+            <input id="replay-interval" type="range" min="300" max="3000" step="100" value="1000" />
+            <output id="replay-interval-label">1.0 秒/步</output>
+          </label>
         </div>
       </section>
 
@@ -211,6 +264,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?v=10"></script>
+    <script type="module" src="/app.js?v=11"></script>
   </body>
 </html>

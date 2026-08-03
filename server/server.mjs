@@ -6,6 +6,7 @@ import { dirname, join, normalize } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { RoomManager } from "./room-manager.mjs";
+import { HistoryStore } from "./history-store.mjs";
 import { upgradeWebSocket } from "./websocket.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -75,11 +76,15 @@ function validSessionId(value) {
 
 export function createGameServer(options = {}) {
   const openSockets = new Set();
+  const historyStore = options.historyStore ?? new HistoryStore({
+    filePath: options.historyFile ?? process.env.HISTORY_FILE,
+  });
   const manager = options.manager ?? new RoomManager({
     disconnectGraceMs: options.disconnectGraceMs,
     turnDurationMs: options.turnDurationMs,
     qaEnabled: options.qaEnabled ?? process.env.GAME_QA === "1",
     aiSearchTimeMs: options.aiSearchTimeMs ?? (Number.parseInt(process.env.AI_TIME_MS ?? "", 10) || undefined),
+    historyStore,
   });
 
   const httpServer = createServer(async (request, response) => {
