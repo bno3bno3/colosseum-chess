@@ -113,7 +113,8 @@ test("蛇会沿攻击方向击退，退路被占或越界才吃掉，大象免�
   forceBlue(game);
   assert.equal(legalActionsFor(game, "blue").moves.some((action) => action.from === 4 && action.to === 8 && action.push), true);
   movePiece(game, "blue", 4, 8, { version: game.version, now: 2_000 });
-  assert.equal(game.board[8].type, "snake");
+  assert.equal(game.board[4].type, "snake");
+  assert.equal(game.board[8], null);
   assert.equal(game.board[12].type, "tiger");
   assert.equal(game.health.red, 14);
   assert.equal(game.lastAction.type, "push");
@@ -170,9 +171,10 @@ test("AI 模拟器与服务器对蛇击退和毒素倒计时采用同一规则",
   forceBlue(game);
   const simulated = publicStateForAI(game);
   assert.equal(applySimulatedAction(simulated, { type: "move", from: 4, to: 8 }), true);
-  assert.equal(simulated.board[8].type, "snake");
+  assert.equal(simulated.board[4].type, "snake");
+  assert.equal(simulated.board[8], null);
   assert.equal(simulated.board[12].type, "wolf");
-  assert.equal(simulated.board[8].poisonTurns, 1);
+  assert.equal(simulated.board[4].poisonTurns, 1);
   assert.equal(simulated.turn, "red");
 });
 

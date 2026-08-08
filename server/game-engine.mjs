@@ -233,8 +233,7 @@ function projectedBoardAfterMove(game, from, to, color) {
   const skipPieceIds = [];
   if (special?.kind === "push") {
     board[special.retreatTo] = defender;
-    board[to] = attacker;
-    board[from] = null;
+    board[to] = null;
   } else {
     board[to] = attacker;
     board[from] = null;
@@ -427,8 +426,7 @@ export function movePiece(game, color, from, to, { version, now = Date.now() } =
 
   if (special?.kind === "push") {
     game.board[special.retreatTo] = defender;
-    game.board[to] = attacker;
-    game.board[from] = null;
+    game.board[to] = null;
     return completeTurn(game, {
       type: "push",
       color,

@@ -405,7 +405,7 @@ function renderReplayBoard(frame, animate) {
       }
       tile.append(image);
       if (animate && action?.type === "flip" && action.index === index) tile.classList.add("just-flipped");
-      if (animate && ["move", "capture", "push"].includes(action?.type) && action.to === index) {
+      if (animate && ["move", "capture"].includes(action?.type) && action.to === index) {
         const fromRow = Math.floor(action.from / 4);
         const fromCol = action.from % 4;
         tile.style.setProperty("--move-x", `${(fromCol - col) * 120}%`);
@@ -418,6 +418,13 @@ function renderReplayBoard(frame, animate) {
         tile.style.setProperty("--move-x", `${(pushedFromCol - col) * 120}%`);
         tile.style.setProperty("--move-y", `${(pushedFromRow - row) * 120}%`);
         tile.classList.add("just-pushed");
+      }
+      if (animate && action?.type === "push" && action.from === index) {
+        const targetRow = Math.floor(action.to / 4);
+        const targetCol = action.to % 4;
+        tile.style.setProperty("--strike-x", `${(targetCol - col) * 34}%`);
+        tile.style.setProperty("--strike-y", `${(targetRow - row) * 34}%`);
+        tile.classList.add("snake-strike");
       }
       cell.append(tile);
     } else {
@@ -750,7 +757,7 @@ function renderBoard() {
         tile.classList.add("just-flipped");
         cell.classList.add("flip-cell");
       }
-      if (["move", "capture", "push"].includes(animation?.type) && animation.to === index) {
+      if (["move", "capture"].includes(animation?.type) && animation.to === index) {
         const fromRow = Math.floor(animation.from / 4);
         const fromCol = animation.from % 4;
         tile.style.setProperty("--move-x", `${(fromCol - col) * 120}%`);
@@ -765,6 +772,13 @@ function renderBoard() {
         tile.style.setProperty("--move-y", `${(pushedFromRow - row) * 120}%`);
         tile.classList.add("just-pushed");
       }
+      if (animation?.type === "push" && animation.from === index) {
+        const targetRow = Math.floor(animation.to / 4);
+        const targetCol = animation.to % 4;
+        tile.style.setProperty("--strike-x", `${(targetCol - col) * 34}%`);
+        tile.style.setProperty("--strike-y", `${(targetRow - row) * 34}%`);
+        tile.classList.add("snake-strike");
+      }
       cell.append(tile);
     } else {
       cell.classList.add("empty-cell");
@@ -772,7 +786,7 @@ function renderBoard() {
     }
 
     if (state.selected === index) cell.classList.add("selected-cell");
-    if (["move", "capture", "push"].includes(animation?.type) && animation.from === index) cell.classList.add("move-origin");
+    if (["move", "capture"].includes(animation?.type) && animation.from === index) cell.classList.add("move-origin");
     if (state.selected !== null && isCandidateTarget(game, state.selected, index)) cell.classList.add("candidate-cell");
     const repetitionForbidden = state.selected !== null && isRepetitionForbidden(game, state.selected, index);
     if (repetitionForbidden) {

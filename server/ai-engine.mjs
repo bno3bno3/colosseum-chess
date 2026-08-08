@@ -232,8 +232,7 @@ export function applySimulatedAction(state, action) {
     if (!legal) return false;
     if (special?.kind === "push") {
       state.board[special.retreatTo] = defender;
-      state.board[action.to] = attacker;
-      state.board[action.from] = null;
+      state.board[action.to] = null;
       const events = runAfterTurnRules({ game: state, color: actor }, state.ruleIds);
       if (state.health[actor] === 0) {
         state.status = "finished";

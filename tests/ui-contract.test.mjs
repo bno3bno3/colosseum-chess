@@ -77,6 +77,8 @@ test("扩展规则可在房间切换，并具有蛇棋子与中毒可视状态",
   assert.match(app, /poisoned-tile/);
   assert.match(app, /poison-counter/);
   assert.match(app, /action\.type === "push"/);
+  assert.match(app, /snake-strike/);
   assert.match(css, /\.rule-toggle/);
   assert.match(css, /\.poisoned-tile/);
+  assert.match(css, /@keyframes\s+snake-strike/);
 });

@@ -8,7 +8,7 @@ export const snakeRule = Object.freeze({
   id: "snake",
   name: "蛇",
   shortName: "蛇",
-  description: "每方一只猫替换为蛇；蛇可吓退相邻敌子，退路被挡或越界时直接吃掉（大象免疫）。",
+  description: "每方一只猫替换为蛇；吓退时蛇保持原位，退路被挡或越界时才进入目标格吃掉（大象免疫）。",
 
   modifyPieceCounts(counts) {
     counts.cat -= 1;
