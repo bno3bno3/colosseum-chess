@@ -1,10 +1,10 @@
 import { parentPort } from "node:worker_threads";
-import { chooseAIAction } from "./ai-engine.mjs";
+import { chooseVersionedAIAction } from "./ai-versions.mjs";
 
 parentPort.on("message", (message) => {
   if (message?.type !== "search") return;
   try {
-    const result = chooseAIAction(message.publicState, message.color, message.options);
+    const result = chooseVersionedAIAction(message.publicState, message.color, message.options);
     parentPort.postMessage({ taskId: message.taskId, ok: true, result });
   } catch (error) {
     parentPort.postMessage({

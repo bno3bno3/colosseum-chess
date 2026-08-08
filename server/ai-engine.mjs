@@ -10,17 +10,18 @@ import {
   otherColor,
   recordCurrentPosition,
 } from "./game-engine.mjs";
+import { runAfterCaptureRules, runAfterTurnRules, specialAttackOutcome } from "./rule-system.mjs";
 
 export const MAX_AI_SEARCH_MS = 15_000;
 export const DEFAULT_AI_SEARCH_MS = 15_000;
 
-const TYPES = Object.keys(PIECE_COUNTS);
 const TYPE_CODE = Object.freeze({
   elephant: "E",
   tiger: "T",
   wolf: "W",
   dog: "D",
   cat: "C",
+  snake: "S",
   mouse: "M",
   football: "F",
 });
@@ -30,6 +31,7 @@ const PIECE_VALUE = Object.freeze({
   wolf: 2.95,
   dog: 2.65,
   cat: 2.35,
+  snake: 2.75,
   mouse: 3.05,
   football: 4.15,
 });
@@ -51,8 +53,8 @@ export function createSeededRng(seed = Date.now()) {
 
 function cloneCaptured(capturedBy = {}) {
   return {
-    blue: (capturedBy.blue ?? []).map((piece) => ({ type: piece.type, color: piece.color })),
-    red: (capturedBy.red ?? []).map((piece) => ({ type: piece.type, color: piece.color })),
+    blue: (capturedBy.blue ?? []).map((piece) => ({ ...piece })),
+    red: (capturedBy.red ?? []).map((piece) => ({ ...piece })),
   };
 }
 
@@ -77,17 +79,26 @@ export function publicStateForAI(game) {
     board: game.board.map((piece) => {
       if (!piece) return null;
       if (!piece.revealed) return { revealed: false };
-      return { revealed: true, type: piece.type, color: piece.color };
+      return {
+        revealed: true,
+        type: piece.type,
+        color: piece.color,
+        ...(piece.poisoned ? { poisoned: true, poisonTurns: piece.poisonTurns } : {}),
+      };
     }),
     capturedBy: cloneCaptured(game.capturedBy),
     positionCounts: clonePositionCounts(game.positionCounts),
+    ruleIds: [...(game.ruleIds ?? [])],
+    pieceCounts: { ...(game.pieceCounts ?? PIECE_COUNTS) },
   };
 }
 
 export function remainingInventory(publicState) {
+  const pieceCounts = publicState.pieceCounts ?? PIECE_COUNTS;
+  const types = Object.keys(pieceCounts);
   const remaining = Object.fromEntries(COLORS.map((color) => [
     color,
-    Object.fromEntries(TYPES.map((type) => [type, PIECE_COUNTS[type]])),
+    Object.fromEntries(types.map((type) => [type, pieceCounts[type]])),
   ]));
 
   for (const piece of publicState.board ?? []) {
@@ -103,7 +114,7 @@ export function remainingInventory(publicState) {
 
   const pool = [];
   for (const color of COLORS) {
-    for (const type of TYPES) {
+    for (const type of types) {
       for (let copy = 0; copy < remaining[color][type]; copy += 1) {
         pool.push({ type, color });
       }
@@ -139,7 +150,7 @@ export function determinize(publicState, rng = Math.random) {
   if (pool.length < hiddenIndices.length) {
     const fallback = [];
     for (const color of COLORS) {
-      for (const type of TYPES) fallback.push({ type, color });
+      for (const type of Object.keys(publicState.pieceCounts ?? PIECE_COUNTS)) fallback.push({ type, color });
     }
     while (pool.length < hiddenIndices.length) {
       pool.push(fallback[Math.floor(rng() * fallback.length)]);
@@ -160,6 +171,8 @@ export function determinize(publicState, rng = Math.random) {
     winner: null,
     loser: null,
     positionCounts: clonePositionCounts(publicState.positionCounts),
+    ruleIds: [...(publicState.ruleIds ?? [])],
+    pieceCounts: { ...(publicState.pieceCounts ?? PIECE_COUNTS) },
   };
   if (!Object.keys(state.positionCounts).length) recordCurrentPosition(state);
   return state;
@@ -176,6 +189,8 @@ function cloneState(state) {
     winner: state.winner ?? null,
     loser: state.loser ?? null,
     positionCounts: clonePositionCounts(state.positionCounts),
+    ruleIds: [...(state.ruleIds ?? [])],
+    pieceCounts: { ...(state.pieceCounts ?? PIECE_COUNTS) },
   };
 }
 
@@ -189,6 +204,13 @@ export function applySimulatedAction(state, action) {
     const piece = state.board[action.index];
     if (!piece || piece.revealed) return false;
     piece.revealed = true;
+    const events = runAfterTurnRules({ game: state, color: actor }, state.ruleIds);
+    if (state.health[actor] === 0) {
+      state.status = "finished";
+      state.winner = otherColor(actor);
+      state.loser = actor;
+      return true;
+    }
     state.turn = otherColor(actor);
     recordCurrentPosition(state);
     return true;
@@ -201,10 +223,28 @@ export function applySimulatedAction(state, action) {
     if (!isAdjacent(action.from, action.to)) return false;
   } else {
     if (!defender.revealed || defender.color === actor) return false;
+    const special = isAdjacent(action.from, action.to)
+      ? specialAttackOutcome({ board: state.board, from: action.from, to: action.to, attacker, defender }, state.ruleIds)
+      : null;
     const legal = attacker.type === "football"
       ? canFootballCapture(state.board, action.from, action.to)
-      : isAdjacent(action.from, action.to) && canAnimalCapture(attacker.type, defender.type);
+      : isAdjacent(action.from, action.to) && (special?.legal || (!special && canAnimalCapture(attacker.type, defender.type, state.ruleIds)));
     if (!legal) return false;
+    if (special?.kind === "push") {
+      state.board[special.retreatTo] = defender;
+      state.board[action.to] = attacker;
+      state.board[action.from] = null;
+      const events = runAfterTurnRules({ game: state, color: actor }, state.ruleIds);
+      if (state.health[actor] === 0) {
+        state.status = "finished";
+        state.winner = otherColor(actor);
+        state.loser = actor;
+        return true;
+      }
+      state.turn = otherColor(actor);
+      recordCurrentPosition(state);
+      return true;
+    }
   }
 
   state.board[action.to] = attacker;
@@ -212,10 +252,31 @@ export function applySimulatedAction(state, action) {
   if (defender) {
     state.health[defender.color] = Math.max(0, state.health[defender.color] - 1);
     state.capturedBy[actor].push({ type: defender.type, color: defender.color });
+    const ruleEvents = runAfterCaptureRules({ game: state, attacker, defender, color: actor }, state.ruleIds);
     if (state.health[defender.color] === 0) {
       state.status = "finished";
       state.winner = actor;
       state.loser = defender.color;
+      return true;
+    }
+    const turnEvents = runAfterTurnRules({
+      game: state,
+      color: actor,
+      skipPieceIds: ruleEvents.poisoned ? [attacker.id] : [],
+      skipIndexes: ruleEvents.poisoned ? [action.to] : [],
+    }, state.ruleIds);
+    if (state.health[actor] === 0) {
+      state.status = "finished";
+      state.winner = otherColor(actor);
+      state.loser = actor;
+      return true;
+    }
+  } else {
+    runAfterTurnRules({ game: state, color: actor }, state.ruleIds);
+    if (state.health[actor] === 0) {
+      state.status = "finished";
+      state.winner = otherColor(actor);
+      state.loser = actor;
       return true;
     }
   }
@@ -250,15 +311,18 @@ export function informationSetKey(state) {
   const board = state.board.map((piece) => {
     if (!piece) return ".";
     if (!piece.revealed) return "?";
-    return `${piece.color[0]}${TYPE_CODE[piece.type]}`;
+    return `${piece.color[0]}${TYPE_CODE[piece.type]}${piece.poisoned ? `p${piece.poisonTurns ?? 3}` : ""}`;
   }).join("");
-  return `${state.turn[0]}|${state.health.blue},${state.health.red}|${capturedSignature(state.capturedBy)}|${board}|${repetitionHistorySignature(state.positionCounts)}`;
+  return `${(state.ruleIds ?? []).join(",")}|${state.turn[0]}|${state.health.blue},${state.health.red}|${capturedSignature(state.capturedBy)}|${board}|${repetitionHistorySignature(state.positionCounts)}`;
 }
 
 function materialValue(state, color) {
   let value = 0;
   for (const piece of state.board) {
-    if (piece?.color === color) value += PIECE_VALUE[piece.type] ?? 1;
+    if (piece?.color === color) {
+      const poisonFactor = piece.poisoned ? 0.42 + Math.max(0, piece.poisonTurns ?? 3) * 0.13 : 1;
+      value += (PIECE_VALUE[piece.type] ?? 1) * poisonFactor;
+    }
   }
   return value;
 }
@@ -305,14 +369,9 @@ export function evaluateState(state, rootColor) {
 function immediateCaptureRisk(state, color, targetIndex) {
   const enemy = otherColor(color);
   let risk = 0;
-  for (let from = 0; from < BOARD_SIZE; from += 1) {
-    const attacker = state.board[from];
-    const defender = state.board[targetIndex];
-    if (!attacker?.revealed || attacker.color !== enemy || !defender?.revealed || defender.color === enemy) continue;
-    const legal = attacker.type === "football"
-      ? canFootballCapture(state.board, from, targetIndex)
-      : isAdjacent(from, targetIndex) && canAnimalCapture(attacker.type, defender.type);
-    if (legal) risk = Math.max(risk, PIECE_VALUE[attacker.type] ?? 1);
+  for (const action of legalActionsFor(state, enemy).captures) {
+    if (action.to !== targetIndex) continue;
+    risk = Math.max(risk, PIECE_VALUE[state.board[action.from]?.type] ?? 1);
   }
   return risk;
 }
@@ -320,16 +379,7 @@ function immediateCaptureRisk(state, color, targetIndex) {
 function captureTargetsFrom(state, from) {
   const attacker = state.board[from];
   if (!attacker?.revealed) return 0;
-  let count = 0;
-  for (let to = 0; to < BOARD_SIZE; to += 1) {
-    const defender = state.board[to];
-    if (!defender?.revealed || defender.color === attacker.color) continue;
-    const legal = attacker.type === "football"
-      ? canFootballCapture(state.board, from, to)
-      : isAdjacent(from, to) && canAnimalCapture(attacker.type, defender.type);
-    if (legal) count += 1;
-  }
-  return count;
+  return legalActionsFor(state, attacker.color).captures.filter((action) => action.from === from).length;
 }
 
 function flipExpectation(state, action, actor) {
@@ -484,10 +534,24 @@ function runISMCTS(publicState, rootColor, {
   rng,
   maxIterations = Infinity,
   collectPonderStates = false,
+  initialCandidates = null,
 } = {}) {
   const table = new Map();
   const rootActions = legalActionsFor(publicState, publicState.turn).all;
   const rootKey = informationSetKey(publicState);
+  const root = ensureNode(table, publicState, rootActions);
+  const initialByKey = new Map();
+  for (const candidate of initialCandidates ?? []) {
+    const key = actionKey(candidate.action);
+    const stats = root.actions.get(key);
+    const visits = Math.max(0, Number(candidate.visits) || 0);
+    if (!stats || visits <= 0) continue;
+    const score = Number.isFinite(candidate.score) ? candidate.score : 0;
+    stats.visits += visits;
+    stats.value += score * visits;
+    root.visits += visits;
+    initialByKey.set(key, { visits, value: score * visits });
+  }
   const ponderKeys = new Set();
   let iterations = 0;
 
@@ -532,8 +596,17 @@ function runISMCTS(publicState, rootColor, {
     iterations += 1;
   }
 
-  const root = table.get(rootKey) ?? ensureNode(table, publicState, rootActions);
-  const candidates = rankedNodeCandidates(root);
+  const finalRoot = table.get(rootKey) ?? root;
+  const candidates = rankedNodeCandidates(finalRoot);
+  const candidateDeltas = rankedNodeCandidates(finalRoot, Infinity)
+    .map((candidate) => {
+      const initial = initialByKey.get(actionKey(candidate.action)) ?? { visits: 0, value: 0 };
+      const stats = finalRoot.actions.get(actionKey(candidate.action));
+      const visits = Math.max(0, (stats?.visits ?? 0) - initial.visits);
+      const value = (stats?.value ?? 0) - initial.value;
+      return { ...candidate, visits, score: visits ? value / visits : candidate.score };
+    })
+    .filter((candidate) => candidate.visits > 0);
   const ponderStates = collectPonderStates
     ? [...ponderKeys]
         .map((key) => {
@@ -548,6 +621,7 @@ function runISMCTS(publicState, rootColor, {
     action: candidates[0]?.action ?? rootActions[0] ?? null,
     iterations,
     candidates,
+    candidateDeltas,
     ...(ponderStates ? { ponderStates } : {}),
   };
 }
@@ -651,6 +725,7 @@ export function chooseAIAction(publicState, color, options = {}) {
       rng,
       maxIterations: Number.isFinite(options.maxIterations) ? options.maxIterations : Infinity,
       collectPonderStates: true,
+      initialCandidates: options.initialCandidates,
     });
     return {
       ...result,
@@ -682,6 +757,7 @@ export function chooseAIAction(publicState, color, options = {}) {
         deadline,
         rng,
         maxIterations: Number.isFinite(options.maxIterations) ? options.maxIterations : Infinity,
+        initialCandidates: options.initialCandidates,
       });
   return {
     ...result,

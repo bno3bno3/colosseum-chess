@@ -19,7 +19,11 @@ test("对局界面包含我方标记、AI、观战和双侧吃子列表入口", 
   assert.match(app, /state\.room\?\.role !== "player"/);
   assert.match(app, /groupCapturedPieces/);
   assert.match(app, /captured-multiplier/);
-  assert.match(app, /AI 预判中/);
+  assert.match(app, /预判中/);
+  assert.match(html, /id="ai-version-setting"/);
+  assert.match(html, /data-ai-version="v1"/);
+  assert.match(html, /data-ai-version="v2"/);
+  assert.match(app, /set_ai_version/);
   assert.match(app, /ponderIterations/);
   assert.match(css, /\.captured-item/);
 });
@@ -64,4 +68,15 @@ test("历史对局列表和可调统一间隔的逐步回放控件完整", () =>
   assert.match(app, /replayIntervalMs/);
   assert.match(css, /\.history-item/);
   assert.match(css, /\.replay-board/);
+});
+
+test("扩展规则可在房间切换，并具有蛇棋子与中毒可视状态", () => {
+  assert.match(html, /id="rule-set-setting"/);
+  assert.match(html, /id="rule-set-options"/);
+  assert.match(app, /type:\s*"set_rule"/);
+  assert.match(app, /poisoned-tile/);
+  assert.match(app, /poison-counter/);
+  assert.match(app, /action\.type === "push"/);
+  assert.match(css, /\.rule-toggle/);
+  assert.match(css, /\.poisoned-tile/);
 });

@@ -133,9 +133,29 @@ test("高强度 AI 在后台线程搜索，完成后才提交匹配版本的走�
   assert.equal(room.game.version, expectedVersion + 1);
   assert.equal(room.aiThinking, false);
   assert.equal(room.game.lastAction.isAI, true);
-  assert.match(room.game.lastAction.ai.method, /ismcts|alpha-beta|forced-win|fallback/);
+  assert.match(room.game.lastAction.ai.method, /ismcts|belief-mcts|alpha-beta|pvs|forced-win|fallback/);
   assert.ok(room.game.lastAction.ai.elapsedMs <= 500);
   if (room.game.lastAction.ai.threads) assert.ok(room.game.lastAction.ai.threads <= 2);
+});
+
+test("房主可在开局前选择并保留 V1 或 V2 AI", () => {
+  const manager = new RoomManager({ rng: () => 0, now: () => 1_000 });
+  const host = attach(manager, "host-ai-version", "版本房主");
+  const guest = attach(manager, "guest-ai-version", "访客");
+  const room = manager.createRoom(host.client, "AI 版本测试");
+  assert.equal(room.aiVersion, "v2");
+
+  manager.setAIVersion(host.client, "v1");
+  assert.equal(manager.roomView(room, host.client).room.aiVersion, "v1");
+  manager.addAI(host.client);
+  const aiId = room.players[1];
+  assert.equal(manager.clients.get(aiId).aiVersion, "v1");
+  assert.equal(manager.roomView(room, host.client).room.players[1].aiVersion, "v1");
+
+  manager.setAIVersion(host.client, "v2");
+  assert.equal(manager.clients.get(aiId).aiVersion, "v2");
+  assert.throws(() => manager.setAIVersion(guest.client, "v1"), { code: "not_in_room" });
+  assert.throws(() => manager.setAIVersion(host.client, "v3"), { code: "bad_ai_version" });
 });
 
 test("只有房主可在无人准备时设置 1–16 血量", () => {
@@ -150,6 +170,33 @@ test("只有房主可在无人准备时设置 1–16 血量", () => {
   assert.throws(() => manager.setHealth(host.client, 17), { code: "bad_health" });
   manager.setReady(player.client, true);
   assert.throws(() => manager.setHealth(host.client, 12), { code: "players_ready" });
+});
+
+test("房主可热插拔扩展规则，准备后锁定，并在开局与历史记录中保留", () => {
+  const stored = [];
+  const historyStore = {
+    append(record) { stored.push(structuredClone(record)); return true; },
+    list() { return []; },
+    get() { return null; },
+  };
+  const manager = new RoomManager({ historyStore, rng: () => 0, now: () => 5_000 });
+  const host = attach(manager, "rule-host", "规则房主");
+  const guest = attach(manager, "rule-guest", "规则访客");
+  const room = manager.createRoom(host.client, "规则房");
+  manager.joinRoom(guest.client, room.id);
+  manager.setRule(host.client, "football-poison", true);
+  manager.setRule(host.client, "snake", true);
+  assert.deepEqual(room.ruleIds, ["football-poison", "snake"]);
+  assert.equal(manager.roomView(room, host.client).room.availableRules.length, 2);
+  assert.throws(() => manager.setRule(guest.client, "snake", false), { code: "host_only" });
+  assert.throws(() => manager.setRule(host.client, "unknown", true), { code: "bad_rule" });
+  manager.setReady(guest.client, true);
+  assert.throws(() => manager.setRule(host.client, "snake", false), { code: "players_ready" });
+  manager.setReady(host.client, true);
+  assert.deepEqual(room.game.ruleIds, ["football-poison", "snake"]);
+  assert.equal(room.game.board.filter((piece) => piece.type === "snake").length, 2);
+  manager.performGameAction(guest.client, { type: "resign", version: room.game.version });
+  assert.deepEqual(stored[0].ruleIds, ["football-poison", "snake"]);
 });
 
 test("两名玩家都准备后自动开局并随机映射阵营", () => {

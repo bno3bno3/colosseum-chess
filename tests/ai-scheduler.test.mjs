@@ -90,3 +90,22 @@ test("预判任务可按真人实际走法收割，并注入 AI 正式搜索", a
   assert.ok(official.elapsedMs <= 300);
   assert.ok(official.ponderIterations > 0);
 });
+
+test("V2 调度会把固定线程池分成经典增强与概率机会节点通道后聚合", async (t) => {
+  const scheduler = new AISearchScheduler({ workerCount: 4, quantumMs: 55 });
+  t.after(() => scheduler.close());
+  const game = createGame({ playerIds: ["a", "b"], rng: () => 0.31 });
+  const result = await scheduler.submit({
+    id: "v2-hybrid",
+    publicState: publicStateForAI(game),
+    color: game.turn,
+    aiVersion: "v2",
+    timeLimitMs: 240,
+    seed: 2026,
+  });
+  assert.equal(result.aiVersion, "v2");
+  assert.equal(result.method, "parallel-belief-mcts-v2");
+  assert.ok(result.action);
+  assert.ok(result.threads <= 4);
+  assert.ok(result.quanta >= 2);
+});

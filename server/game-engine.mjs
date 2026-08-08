@@ -1,4 +1,12 @@
 import { randomUUID } from "node:crypto";
+import {
+  normalizeAnimalType,
+  normalizeRuleIds,
+  pieceCountsForRules,
+  runAfterCaptureRules,
+  runAfterTurnRules,
+  specialAttackOutcome,
+} from "./rule-system.mjs";
 
 export const COLS = 4;
 export const ROWS = 8;
@@ -22,6 +30,7 @@ export const PIECE_LABELS = Object.freeze({
   wolf: "狼",
   dog: "狗",
   cat: "猫",
+  snake: "蛇",
   mouse: "老鼠",
   football: "足球",
 });
@@ -41,6 +50,7 @@ const POSITION_CODES = Object.freeze({
   wolf: "W",
   dog: "D",
   cat: "C",
+  snake: "S",
   mouse: "M",
   football: "F",
 });
@@ -97,9 +107,11 @@ export function indicesBetween(from, to) {
   return null;
 }
 
-export function canAnimalCapture(attackerType, defenderType) {
+export function canAnimalCapture(attackerType, defenderType, ruleIds = []) {
   if (attackerType === "football") return false;
   if (defenderType === "football") return attackerType !== "mouse";
+  attackerType = normalizeAnimalType(attackerType, ruleIds);
+  defenderType = normalizeAnimalType(defenderType, ruleIds);
   if (!(attackerType in RANKS) || !(defenderType in RANKS)) return false;
   if (attackerType === defenderType) return true;
   if (attackerType === "mouse") return defenderType === "elephant";
@@ -114,15 +126,16 @@ export function canFootballCapture(board, from, to) {
 }
 
 export function makePiece(type, color, id = `${color}-${type}-${randomUUID()}`) {
-  if (!(type in PIECE_COUNTS)) throw new TypeError(`未知棋子类型：${type}`);
+  if (!(type in PIECE_COUNTS) && type !== "snake") throw new TypeError(`未知棋子类型：${type}`);
   if (!COLORS.includes(color)) throw new TypeError(`未知阵营：${color}`);
   return { id, type, color, revealed: false };
 }
 
-export function makePieceSet() {
+export function makePieceSet(ruleIds = []) {
   const pieces = [];
+  const counts = pieceCountsForRules(PIECE_COUNTS, ruleIds);
   for (const color of COLORS) {
-    for (const [type, count] of Object.entries(PIECE_COUNTS)) {
+    for (const [type, count] of Object.entries(counts)) {
       for (let copy = 0; copy < count; copy += 1) {
         pieces.push(makePiece(type, color, `${color}-${type}-${copy + 1}`));
       }
@@ -144,7 +157,8 @@ export function positionSignature(board, turn) {
   const cells = board.map((piece) => {
     if (!piece) return ".";
     if (!piece.revealed) return "?";
-    return `${piece.color === "blue" ? "b" : "r"}${POSITION_CODES[piece.type]}`;
+    const poison = piece.poisoned ? `p${piece.poisonTurns ?? 3}` : "";
+    return `${piece.color === "blue" ? "b" : "r"}${POSITION_CODES[piece.type]}${poison}`;
   }).join("");
   return `${turn === "blue" ? "b" : "r"}|${cells}`;
 }
@@ -160,7 +174,12 @@ function replayBoard(board) {
   return board.map((piece) => {
     if (!piece) return null;
     if (!piece.revealed) return { hidden: true };
-    return { type: piece.type, color: piece.color, revealed: true };
+    return {
+      type: piece.type,
+      color: piece.color,
+      revealed: true,
+      ...(piece.poisoned ? { poisoned: true, poisonTurns: piece.poisonTurns } : {}),
+    };
   });
 }
 
@@ -180,6 +199,7 @@ export function replayFrameFor(game) {
     winner: game.winner,
     loser: game.loser,
     endReason: game.endReason,
+    ruleIds: [...(game.ruleIds ?? [])],
   };
 }
 
@@ -205,13 +225,38 @@ export function refreshLatestReplayFrame(game) {
   return frame;
 }
 
+function projectedBoardAfterMove(game, from, to, color) {
+  const board = game.board.map((piece) => (piece ? { ...piece } : null));
+  const attacker = board[from];
+  const defender = board[to];
+  const special = defender ? specialAttackOutcome({ board, from, to, attacker, defender }, game.ruleIds) : null;
+  const skipPieceIds = [];
+  if (special?.kind === "push") {
+    board[special.retreatTo] = defender;
+    board[to] = attacker;
+    board[from] = null;
+  } else {
+    board[to] = attacker;
+    board[from] = null;
+    if (defender) {
+      const events = runAfterCaptureRules({ attacker, defender }, game.ruleIds);
+      if (events.poisoned) skipPieceIds.push(attacker.id);
+    }
+  }
+  const mock = {
+    board,
+    health: { blue: 99, red: 99 },
+    capturedBy: { blue: [], red: [] },
+  };
+  runAfterTurnRules({ game: mock, color, skipPieceIds, skipIndexes: skipPieceIds.length ? [to] : [] }, game.ruleIds);
+  return mock.board;
+}
+
 export function wouldCreateFourthPosition(game, from, to, color = game.turn) {
   if (!game.positionCounts || !isBoardIndex(from) || !isBoardIndex(to)) return false;
   const attacker = game.board[from];
   if (!attacker) return false;
-  const nextBoard = [...game.board];
-  nextBoard[to] = attacker;
-  nextBoard[from] = null;
+  const nextBoard = projectedBoardAfterMove(game, from, to, color);
   const signature = positionSignature(nextBoard, otherColor(color));
   return (game.positionCounts[signature] ?? 0) >= 3;
 }
@@ -223,6 +268,7 @@ export function createGame({
   rng = Math.random,
   now = Date.now(),
   board,
+  ruleIds = [],
 } = {}) {
   if (!Array.isArray(playerIds) || playerIds.length !== 2 || playerIds.some((id) => !id)) {
     throw new TypeError("开局需要两名有效玩家");
@@ -238,9 +284,10 @@ export function createGame({
     ? { blue: playerIds[0], red: playerIds[1] }
     : { blue: playerIds[1], red: playerIds[0] };
   const turn = rng() < 0.5 ? "blue" : "red";
+  const enabledRuleIds = normalizeRuleIds(ruleIds);
   const nextBoard = board
     ? board.map((piece) => (piece ? { ...piece } : null))
-    : shuffle(makePieceSet(), rng);
+    : shuffle(makePieceSet(enabledRuleIds), rng);
 
   if (nextBoard.length !== BOARD_SIZE) throw new RangeError("棋盘必须恰好包含 32 格");
 
@@ -264,6 +311,8 @@ export function createGame({
     endedAt: null,
     positionCounts: Object.create(null),
     replayFrames: [],
+    ruleIds: enabledRuleIds,
+    pieceCounts: pieceCountsForRules(PIECE_COUNTS, enabledRuleIds),
   };
   recordCurrentPosition(game);
   appendReplayFrame(game);
@@ -285,9 +334,15 @@ function requirePlayingTurn(game, color, version) {
   }
 }
 
-function completeTurn(game, action, now) {
+function completeTurn(game, action, now, { skipPieceIds = [], skipIndexes = [] } = {}) {
   game.version += 1;
-  game.lastAction = { ...action, at: now };
+  const actor = game.turn;
+  let ruleEvents = {};
+  if (game.status === "playing") {
+    ruleEvents = runAfterTurnRules({ game, color: actor, skipPieceIds, skipIndexes }, game.ruleIds);
+    if (game.health[actor] === 0) finishGame(game, actor, "poison", now);
+  }
+  game.lastAction = { ...action, ...ruleEvents, at: now };
   if (game.status === "playing") {
     game.turn = otherColor(game.turn);
     game.turnDeadline = now + game.turnDurationMs;
@@ -345,6 +400,7 @@ export function movePiece(game, color, from, to, { version, now = Date.now() } =
   if (!defender.revealed) throw new GameRuleError("hidden_target", "暗子不能被吃，只能翻开");
   if (defender.color === color) throw new GameRuleError("friendly_target", "不能吃自己的棋子");
 
+  let special = null;
   if (attacker.type === "football") {
     if (!canFootballCapture(game.board, from, to)) {
       throw new GameRuleError("football_screen", "足球吃子时与目标之间必须恰好隔一枚棋子");
@@ -353,7 +409,11 @@ export function movePiece(game, color, from, to, { version, now = Date.now() } =
     if (!isAdjacent(from, to)) {
       throw new GameRuleError("capture_too_far", "动物吃子时只能正交走一格");
     }
-    if (!canAnimalCapture(attacker.type, defender.type)) {
+    special = specialAttackOutcome({ board: game.board, from, to, attacker, defender }, game.ruleIds);
+    if (special?.legal === false) {
+      throw new GameRuleError("snake_elephant", "大象不会被蛇吓退");
+    }
+    if (!special && !canAnimalCapture(attacker.type, defender.type, game.ruleIds)) {
       throw new GameRuleError(
         "weaker_piece",
         `${PIECE_LABELS[attacker.type]}不能吃${PIECE_LABELS[defender.type]}`,
@@ -365,10 +425,27 @@ export function movePiece(game, color, from, to, { version, now = Date.now() } =
     throw new GameRuleError("position_repetition", "该走法会让同一局面第 4 次出现，请变招");
   }
 
+  if (special?.kind === "push") {
+    game.board[special.retreatTo] = defender;
+    game.board[to] = attacker;
+    game.board[from] = null;
+    return completeTurn(game, {
+      type: "push",
+      color,
+      from,
+      to,
+      pushedTo: special.retreatTo,
+      piece: attacker.type,
+      pushed: defender.type,
+      pushedColor: defender.color,
+    }, now);
+  }
+
   game.board[to] = attacker;
   game.board[from] = null;
   game.health[defender.color] = Math.max(0, game.health[defender.color] - 1);
   game.capturedBy[color].push({ type: defender.type, color: defender.color });
+  const ruleEvents = runAfterCaptureRules({ game, attacker, defender, color, from, to }, game.ruleIds);
   if (game.health[defender.color] === 0) finishGame(game, defender.color, "health", now);
 
   return completeTurn(game, {
@@ -379,7 +456,11 @@ export function movePiece(game, color, from, to, { version, now = Date.now() } =
     piece: attacker.type,
     captured: defender.type,
     capturedColor: defender.color,
-  }, now);
+    ...ruleEvents,
+  }, now, {
+    skipPieceIds: ruleEvents.poisoned ? [attacker.id] : [],
+    skipIndexes: ruleEvents.poisoned ? [to] : [],
+  });
 }
 
 export function resignGame(game, color, { reason = "resign", now = Date.now() } = {}) {
@@ -396,12 +477,7 @@ export function resignGame(game, color, { reason = "resign", now = Date.now() } 
 export function processTurnTimeout(game, now = Date.now()) {
   if (game.status !== "playing" || now < game.turnDeadline) return false;
   const skipped = game.turn;
-  game.turn = otherColor(game.turn);
-  game.version += 1;
-  game.turnDeadline = now + game.turnDurationMs;
-  game.lastAction = { type: "timeout", color: skipped, at: now };
-  recordCurrentPosition(game);
-  appendReplayFrame(game);
+  completeTurn(game, { type: "timeout", color: skipped }, now);
   return true;
 }
 
@@ -437,20 +513,26 @@ export function legalActionsFor(game, color) {
       }
       if (!target.revealed || target.color === color) continue;
 
+      const special = isAdjacent(index, targetIndex)
+        ? specialAttackOutcome({ board: game.board, from: index, to: targetIndex, attacker: piece, defender: target }, game.ruleIds)
+        : null;
       const legalCapture = piece.type === "football"
         ? canFootballCapture(game.board, index, targetIndex)
-        : isAdjacent(index, targetIndex) && canAnimalCapture(piece.type, target.type);
+        : isAdjacent(index, targetIndex) && (special?.legal || (!special && canAnimalCapture(piece.type, target.type, game.ruleIds)));
       if (legalCapture) {
         const action = {
           type: "move",
           from: index,
           to: targetIndex,
-          capture: true,
+          capture: special?.kind !== "push",
+          push: special?.kind === "push",
+          ...(special?.kind === "push" ? { pushedTo: special.retreatTo } : {}),
           attacker: piece.type,
           defender: target.type,
         };
         if (wouldCreateFourthPosition(game, index, targetIndex, color)) forbiddenRepetitionMoves.push(action);
-        else captures.push(action);
+        else if (action.capture) captures.push(action);
+        else moves.push(action);
       }
     }
   }
@@ -468,7 +550,13 @@ export function gameViewFor(game, viewerId, now = Date.now()) {
     board: game.board.map((piece) => {
       if (!piece) return null;
       if (!piece.revealed) return { hidden: true };
-      return { id: piece.id, type: piece.type, color: piece.color, revealed: true };
+      return {
+        id: piece.id,
+        type: piece.type,
+        color: piece.color,
+        revealed: true,
+        ...(piece.poisoned ? { poisoned: true, poisonTurns: piece.poisonTurns } : {}),
+      };
     }),
     health: { ...game.health },
     capturedBy: {
@@ -488,5 +576,6 @@ export function gameViewFor(game, viewerId, now = Date.now()) {
     startedAt: game.startedAt,
     endedAt: game.endedAt,
     repetitionForbiddenMoves: (legal?.forbiddenRepetitionMoves ?? []).map(({ from, to }) => ({ from, to })),
+    ruleIds: [...(game.ruleIds ?? [])],
   };
 }

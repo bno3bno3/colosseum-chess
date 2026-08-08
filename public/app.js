@@ -7,14 +7,16 @@ const PIECE_NAMES = {
   wolf: "狼",
   dog: "狗",
   cat: "猫",
+  snake: "蛇",
   mouse: "老鼠",
   football: "足球",
 };
 
-const PIECE_RANKS = { elephant: 6, tiger: 5, wolf: 4, dog: 3, cat: 2, mouse: 1 };
+const PIECE_RANKS = { elephant: 6, tiger: 5, wolf: 4, dog: 3, cat: 2, snake: 2, mouse: 1 };
 
 const END_REASONS = {
   health: "对方血条空了。",
+  poison: "对方最后一格血被毒素扣除。",
   resign: "对方认输了。",
   leave: "对方离开了对局。",
   switch_room: "对方离开了对局。",
@@ -53,6 +55,11 @@ const elements = {
   roomHelp: $("#room-help"),
   takeSeat: $("#take-seat-button"),
   aiPlayer: $("#ai-player-button"),
+  aiVersionSetting: $("#ai-version-setting"),
+  aiVersionDescription: $("#ai-version-description"),
+  aiVersionButtons: [...document.querySelectorAll("[data-ai-version]")],
+  ruleSetSetting: $("#rule-set-setting"),
+  ruleSetOptions: $("#rule-set-options"),
   ready: $("#ready-button"),
   qa: $("#qa-button"),
   qaGame: $("#qa-game-button"),
@@ -150,6 +157,10 @@ function send(payload) {
   return true;
 }
 
+function aiVersionLabel(player) {
+  return player?.aiVersion ? `AI ${player.aiVersion.toUpperCase()}` : "AI";
+}
+
 function connect() {
   clearTimeout(state.reconnectTimer);
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -223,7 +234,9 @@ function handleMessage(message) {
       const nextVersion = message.room?.game?.version;
       if (nextVersion !== previousVersion) {
         const action = message.room?.game?.lastAction;
-        state.pendingAnimation = ["flip", "move", "capture"].includes(action?.type) ? { ...action } : null;
+        state.pendingAnimation = ["flip", "move", "capture", "push"].includes(action?.type) || action?.poisonDeaths?.length
+          ? { ...action }
+          : null;
       }
       state.room = message.room;
       updateClock(message.room?.serverNow);
@@ -333,13 +346,14 @@ function renderHistory() {
     const matchup = document.createElement("div");
     matchup.className = "history-matchup";
     matchup.innerHTML = `<span class="blue-name"></span><b>VS</b><span class="red-name"></span>`;
-    matchup.querySelector(".blue-name").textContent = `${blue.nickname}${blue.isAI ? " · AI" : ""}`;
-    matchup.querySelector(".red-name").textContent = `${red.nickname}${red.isAI ? " · AI" : ""}`;
+    matchup.querySelector(".blue-name").textContent = `${blue.nickname}${blue.isAI ? ` · ${aiVersionLabel(blue)}` : ""}`;
+    matchup.querySelector(".red-name").textContent = `${red.nickname}${red.isAI ? ` · ${aiVersionLabel(red)}` : ""}`;
 
     const footer = document.createElement("div");
     footer.className = "history-item-footer";
     const result = document.createElement("span");
     result.textContent = `${winner.nickname} 获胜 · ${record.stepCount} 步`;
+    if (record.ruleIds?.length) result.textContent += ` · ${record.ruleIds.length} 条扩展规则`;
     const replay = document.createElement("button");
     replay.type = "button";
     replay.className = "history-replay-button";
@@ -381,15 +395,29 @@ function renderReplayBoard(frame, animate) {
         tile.classList.add(`${piece.color}-tile`, "revealed-tile");
         image.src = `/pieces/${piece.type}.svg`;
         image.alt = `${piece.color === "blue" ? "蓝方" : "红方"}${PIECE_NAMES[piece.type]}`;
+        if (piece.poisoned) {
+          tile.classList.add("poisoned-tile");
+          const poison = document.createElement("span");
+          poison.className = "poison-counter";
+          poison.textContent = String(piece.poisonTurns ?? 3);
+          tile.append(poison);
+        }
       }
       tile.append(image);
       if (animate && action?.type === "flip" && action.index === index) tile.classList.add("just-flipped");
-      if (animate && ["move", "capture"].includes(action?.type) && action.to === index) {
+      if (animate && ["move", "capture", "push"].includes(action?.type) && action.to === index) {
         const fromRow = Math.floor(action.from / 4);
         const fromCol = action.from % 4;
         tile.style.setProperty("--move-x", `${(fromCol - col) * 120}%`);
         tile.style.setProperty("--move-y", `${(fromRow - row) * 120}%`);
         tile.classList.add(action.type === "capture" ? "just-captured" : "just-moved");
+      }
+      if (animate && action?.type === "push" && action.pushedTo === index) {
+        const pushedFromRow = Math.floor(action.to / 4);
+        const pushedFromCol = action.to % 4;
+        tile.style.setProperty("--move-x", `${(pushedFromCol - col) * 120}%`);
+        tile.style.setProperty("--move-y", `${(pushedFromRow - row) * 120}%`);
+        tile.classList.add("just-pushed");
       }
       cell.append(tile);
     } else {
@@ -409,8 +437,8 @@ function renderReplay() {
   const red = historyPlayer(record, "red");
   elements.replayRoomName.textContent = record.roomName || "对局回放";
   elements.replayDate.textContent = formatHistoryDate(record.endedAt);
-  elements.replayBluePlayer.textContent = `${blue.nickname}${blue.isAI ? " · AI" : ""}`;
-  elements.replayRedPlayer.textContent = `${red.nickname}${red.isAI ? " · AI" : ""}`;
+  elements.replayBluePlayer.textContent = `${blue.nickname}${blue.isAI ? ` · ${aiVersionLabel(blue)}` : ""}`;
+  elements.replayRedPlayer.textContent = `${red.nickname}${red.isAI ? ` · ${aiVersionLabel(red)}` : ""}`;
   elements.replayBlueHealth.textContent = `${frame.health.blue}/${record.initialHealth}`;
   elements.replayRedHealth.textContent = `${frame.health.red}/${record.initialHealth}`;
   elements.replayAction.textContent = describeAction(frame.action) || "棋局开始";
@@ -472,7 +500,8 @@ function renderLobby() {
     const title = document.createElement("strong");
     title.textContent = room.name;
     const detail = document.createElement("small");
-    detail.textContent = `${room.hostName} · ${room.health} 格血 · ${room.spectators} 人观战`;
+    const ruleText = room.ruleIds?.length ? ` · ${room.ruleIds.length} 条扩展规则` : "";
+    detail.textContent = `${room.hostName} · ${room.health} 格血${ruleText} · ${room.spectators} 人观战`;
     info.append(title, detail);
 
     const meta = document.createElement("span");
@@ -518,7 +547,7 @@ function seatContent(seat, color) {
   const status = document.createElement("small");
   if (seat) {
     name.textContent = seat.nickname;
-    status.textContent = seat.isAI ? "AI 已就绪" : seat.connected ? (seat.ready ? "已准备" : "等待确认") : "断线重连中";
+    status.textContent = seat.isAI ? `${aiVersionLabel(seat)} 已就绪` : seat.connected ? (seat.ready ? "已准备" : "等待确认") : "断线重连中";
   } else {
     name.textContent = "等待玩家";
     status.textContent = "席位空闲";
@@ -527,7 +556,7 @@ function seatContent(seat, color) {
   if (seat?.isAI) {
     const aiBadge = document.createElement("em");
     aiBadge.className = "ai-badge";
-    aiBadge.textContent = "AI";
+    aiBadge.textContent = aiVersionLabel(seat);
     copy.append(aiBadge);
   }
   copy.append(status);
@@ -551,6 +580,40 @@ function renderRoom() {
   const settingsLocked = !room.isHost || room.players.some((player) => player?.ready && !player?.isAI);
   elements.healthMinus.disabled = settingsLocked || room.health <= 1;
   elements.healthPlus.disabled = settingsLocked || room.health >= 16;
+  elements.aiVersionSetting.hidden = room.status === "playing";
+  elements.aiVersionSetting.disabled = settingsLocked;
+  for (const button of elements.aiVersionButtons) {
+    const selected = button.dataset.aiVersion === room.aiVersion;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+    button.disabled = settingsLocked;
+  }
+  elements.aiVersionDescription.textContent = room.aiVersion === "v1"
+    ? "V1：保留原版 SO-ISMCTS 与 alpha-beta 终局搜索。"
+    : "V2：机会节点概率搜索、隐式极小极大备份、吃子延伸与强化终局搜索。";
+  elements.ruleSetSetting.disabled = settingsLocked || room.status === "playing";
+  elements.ruleSetOptions.replaceChildren();
+  for (const rule of room.availableRules ?? []) {
+    const enabled = (room.ruleIds ?? []).includes(rule.id);
+    const label = document.createElement("label");
+    label.className = `rule-toggle${enabled ? " is-enabled" : ""}`;
+    const copy = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = rule.name;
+    const description = document.createElement("small");
+    description.textContent = rule.description;
+    copy.append(title, description);
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = enabled;
+    input.disabled = settingsLocked || room.status === "playing";
+    input.setAttribute("aria-label", `启用${rule.name}`);
+    input.addEventListener("change", () => send({ type: "set_rule", ruleId: rule.id, enabled: input.checked }));
+    const switcher = document.createElement("i");
+    switcher.setAttribute("aria-hidden", "true");
+    label.append(copy, input, switcher);
+    elements.ruleSetOptions.append(label);
+  }
   elements.takeSeat.hidden = room.role !== "spectator" || !room.players.some((player) => !player);
   const aiPlayer = room.players.find((player) => player?.isAI);
   const hasEmptySeat = room.players.some((player) => !player);
@@ -584,8 +647,8 @@ function updatePlayerCard(element, color, player, game) {
   const meBadge = element.querySelector(".me-badge");
   meBadge.hidden = !game || game.youColor !== color;
   if (!player) status.textContent = "未入座";
-  else if (player.isAI && game?.status === "playing" && game.turn === color) status.textContent = player.aiThinking ? "AI 深度搜索中" : "AI 准备计算";
-  else if (player.isAI) status.textContent = player.aiPondering ? "AI 预判中" : "AI 玩家";
+  else if (player.isAI && game?.status === "playing" && game.turn === color) status.textContent = player.aiThinking ? `${aiVersionLabel(player)} 深度搜索中` : `${aiVersionLabel(player)} 准备计算`;
+  else if (player.isAI) status.textContent = player.aiPondering ? `${aiVersionLabel(player)} 预判中` : `${aiVersionLabel(player)} 玩家`;
   else if (!player.connected) status.textContent = "断线重连中";
   else if (game?.status === "playing" && game.turn === color) status.textContent = "正在行动";
   else if (game?.status === "playing") status.textContent = "等待对方";
@@ -673,19 +736,34 @@ function renderBoard() {
         image.alt = `${piece.color === "blue" ? "蓝方" : "红方"}${PIECE_NAMES[piece.type]}`;
         cell.setAttribute("aria-label", image.alt);
         if (piece.color === game?.youColor) cell.classList.add("own-piece");
+        if (piece.poisoned) {
+          tile.classList.add("poisoned-tile");
+          const poison = document.createElement("span");
+          poison.className = "poison-counter";
+          poison.textContent = String(piece.poisonTurns ?? 3);
+          poison.setAttribute("aria-label", `中毒，还剩 ${piece.poisonTurns ?? 3} 回合`);
+          tile.append(poison);
+        }
       }
       tile.append(image);
       if (animation?.type === "flip" && animation.index === index) {
         tile.classList.add("just-flipped");
         cell.classList.add("flip-cell");
       }
-      if (["move", "capture"].includes(animation?.type) && animation.to === index) {
+      if (["move", "capture", "push"].includes(animation?.type) && animation.to === index) {
         const fromRow = Math.floor(animation.from / 4);
         const fromCol = animation.from % 4;
         tile.style.setProperty("--move-x", `${(fromCol - col) * 120}%`);
         tile.style.setProperty("--move-y", `${(fromRow - row) * 120}%`);
         tile.classList.add(animation.type === "capture" ? "just-captured" : "just-moved");
         if (animation.type === "capture") cell.classList.add("capture-impact");
+      }
+      if (animation?.type === "push" && animation.pushedTo === index) {
+        const pushedFromRow = Math.floor(animation.to / 4);
+        const pushedFromCol = animation.to % 4;
+        tile.style.setProperty("--move-x", `${(pushedFromCol - col) * 120}%`);
+        tile.style.setProperty("--move-y", `${(pushedFromRow - row) * 120}%`);
+        tile.classList.add("just-pushed");
       }
       cell.append(tile);
     } else {
@@ -694,13 +772,14 @@ function renderBoard() {
     }
 
     if (state.selected === index) cell.classList.add("selected-cell");
-    if (["move", "capture"].includes(animation?.type) && animation.from === index) cell.classList.add("move-origin");
+    if (["move", "capture", "push"].includes(animation?.type) && animation.from === index) cell.classList.add("move-origin");
     if (state.selected !== null && isCandidateTarget(game, state.selected, index)) cell.classList.add("candidate-cell");
     const repetitionForbidden = state.selected !== null && isRepetitionForbidden(game, state.selected, index);
     if (repetitionForbidden) {
       cell.classList.add("repetition-forbidden");
       cell.title = "该走法会让同一局面第 4 次出现，必须变招";
     }
+    if (animation?.poisonDeaths?.some((death) => death.index === index)) cell.classList.add("poison-death-cell");
     cell.disabled = !game || game.status !== "playing" || state.room?.role !== "player";
     cell.addEventListener("click", () => onCellClick(index));
     elements.board.append(cell);
@@ -710,6 +789,7 @@ function renderBoard() {
 
 function canClientCapture(attackerType, defenderType) {
   if (attackerType === "football") return true;
+  if (attackerType === "snake") return defenderType !== "elephant";
   if (defenderType === "football") return attackerType !== "mouse";
   if (attackerType === defenderType) return true;
   if (attackerType === "mouse") return defenderType === "elephant";
@@ -776,7 +856,11 @@ function onCellClick(index) {
   if (piece.color !== game.youColor) return toast("只能选择自己的棋子", "error");
   state.selected = index;
   renderBoard();
-  elements.gameHint.textContent = piece.type === "football" ? "选择空邻格移动，或选择隔一枚棋子的敌方明子" : "选择相邻空格或可以吃的敌方棋子";
+  elements.gameHint.textContent = piece.type === "football"
+    ? "选择空邻格移动，或选择隔一枚棋子的敌方明子"
+    : piece.type === "snake"
+      ? "选择相邻空格，或吓退相邻敌子（大象免疫）"
+      : "选择相邻空格或可以吃的敌方棋子";
 }
 
 function renderHealth() {
@@ -819,11 +903,15 @@ function renderTimer() {
 function describeAction(action) {
   if (!action) return "";
   const actor = action.isAI ? "AI · " : "";
-  if (ACTION_TEXT[action.type]) return actor + ACTION_TEXT[action.type];
-  if (action.type === "flip") return `${actor}翻开了${action.pieceColor === "blue" ? "蓝" : "红"}方${PIECE_NAMES[action.piece]}`;
-  if (action.type === "move") return `${actor}${PIECE_NAMES[action.piece]}移动了一格`;
-  if (action.type === "capture") return `${actor}${PIECE_NAMES[action.piece]}吃掉了${PIECE_NAMES[action.captured]}`;
-  return "";
+  let text = ACTION_TEXT[action.type] ? actor + ACTION_TEXT[action.type] : "";
+  if (action.type === "flip") text = `${actor}翻开了${action.pieceColor === "blue" ? "蓝" : "红"}方${PIECE_NAMES[action.piece]}`;
+  if (action.type === "move") text = `${actor}${PIECE_NAMES[action.piece]}移动了一格`;
+  if (action.type === "capture") text = `${actor}${PIECE_NAMES[action.piece]}吃掉了${PIECE_NAMES[action.captured]}`;
+  if (action.type === "push") text = `${actor}蛇把${PIECE_NAMES[action.pushed]}吓退了一格`;
+  if (action.poisoned) text += "，并染上毒素";
+  else if (action.cured) text += "，毒素已解除";
+  if (action.poisonDeaths?.length) text += `；${action.poisonDeaths.map((death) => PIECE_NAMES[death.type]).join("、")}毒发倒下`;
+  return text;
 }
 
 function renderStatus() {
@@ -853,14 +941,14 @@ function renderStatus() {
       ? "翻开暗子，或选择自己的明子移动"
       : game.youColor
         ? playerForColor(game.turn)?.isAI
-          ? "AI 正在并行推演（最长 15 秒）…"
+          ? `${aiVersionLabel(playerForColor(game.turn))} 正在并行推演（最长 15 秒）…`
           : "请等待对方操作"
         : "观战中 · 暗子信息已由服务器保护";
   elements.lastAction.textContent = describeAction(game.lastAction);
   const ai = game.lastAction?.ai;
   elements.lastAction.dataset.aiMethod = ai?.method || "";
   elements.lastAction.title = ai
-    ? `AI ${ai.method} · ${ai.threads ? `${ai.threads} 线程 · ` : ""}${ai.ponderIterations ? `预判 ${ai.ponderIterations} 次 · ` : ""}${ai.iterations ? `本回合 ${ai.iterations} 次模拟 · ` : ""}${ai.depth ? `深度 ${ai.depth} · ` : ""}${ai.elapsedMs}ms`
+    ? `AI ${(ai.version || "v1").toUpperCase()} · ${ai.method} · ${ai.threads ? `${ai.threads} 线程 · ` : ""}${ai.ponderIterations ? `预判 ${ai.ponderIterations} 次 · ` : ""}${ai.iterations ? `本回合 ${ai.iterations} 次模拟 · ` : ""}${ai.depth ? `深度 ${ai.depth} · ` : ""}${ai.elapsedMs}ms`
     : "";
 }
 
@@ -981,6 +1069,9 @@ elements.takeSeat.addEventListener("click", () => send({ type: "take_seat" }));
 elements.aiPlayer.addEventListener("click", () => {
   send({ type: elements.aiPlayer.dataset.action === "remove" ? "remove_ai" : "add_ai" });
 });
+for (const button of elements.aiVersionButtons) {
+  button.addEventListener("click", () => send({ type: "set_ai_version", version: button.dataset.aiVersion }));
+}
 elements.qa.addEventListener("click", () => send({ type: "qa_scenario" }));
 elements.qaGame.addEventListener("click", () => send({ type: "qa_scenario" }));
 $("#spectate-code-button").addEventListener("click", () => {

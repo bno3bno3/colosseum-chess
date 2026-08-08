@@ -17,6 +17,7 @@ function summary(record) {
     endedAt: record.endedAt,
     durationMs: Math.max(0, record.endedAt - record.startedAt),
     initialHealth: record.initialHealth,
+    ruleIds: [...(record.ruleIds ?? [])],
     players: clone(record.players),
     winner: record.winner,
     endReason: record.endReason,

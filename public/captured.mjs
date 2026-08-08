@@ -1,6 +1,7 @@
 export const CAPTURE_ORDER = Object.freeze([
   "mouse",
   "cat",
+  "snake",
   "dog",
   "wolf",
   "tiger",

@@ -18,10 +18,15 @@ import {
 import {
   DEFAULT_AI_SEARCH_MS,
   MAX_AI_SEARCH_MS,
-  chooseAIAction,
   publicStateForAI,
 } from "./ai-engine.mjs";
 import { AI_SEARCH_QUANTUM_MS, AISearchScheduler, defaultAIWorkerCount } from "./ai-scheduler.mjs";
+import {
+  DEFAULT_AI_VERSION,
+  chooseVersionedAIAction,
+  normalizeAIVersion,
+} from "./ai-versions.mjs";
+import { normalizeRuleIds, ruleCatalog } from "./rule-system.mjs";
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const AI_NAMES = ["AI·小虎", "AI·象博士", "AI·森林守卫", "AI·闪电鼠"];
@@ -196,10 +201,14 @@ export class RoomManager {
         id: participants[color]?.id ?? game.players[color],
         nickname: participants[color]?.nickname ?? this.clients.get(game.players[color])?.nickname ?? "玩家",
         isAI: Boolean(participants[color]?.isAI ?? this.clients.get(game.players[color])?.isAI),
+        aiVersion: participants[color]?.isAI
+          ? normalizeAIVersion(participants[color]?.aiVersion ?? room.aiVersion)
+          : null,
       })),
       winner: game.winner,
       loser: game.loser,
       endReason: game.endReason,
+      ruleIds: [...(game.ruleIds ?? [])],
       frames: structuredClone(game.replayFrames ?? []),
     };
     try {
@@ -229,6 +238,8 @@ export class RoomManager {
         name: room.name,
         status: room.status,
         health: room.health,
+        aiVersion: room.aiVersion,
+        ruleIds: [...room.ruleIds],
         players: room.players.filter(Boolean).length,
         capacity: 2,
         spectators: room.spectators.size,
@@ -247,6 +258,9 @@ export class RoomManager {
         name: room.name,
         status: room.status,
         health: room.health,
+        aiVersion: room.aiVersion,
+        ruleIds: [...room.ruleIds],
+        availableRules: ruleCatalog(),
         isHost: room.hostId === viewer.id,
         role,
         seatIndex,
@@ -263,6 +277,7 @@ export class RoomManager {
                 color: room.game ? colorForPlayer(room.game, id) : null,
                 isHost: room.hostId === id,
                 isAI: Boolean(player.isAI),
+                aiVersion: player.isAI ? normalizeAIVersion(player.aiVersion ?? room.aiVersion) : null,
                 aiThinking: Boolean(player.isAI && room.aiThinking && room.game?.turn === colorForPlayer(room.game, id)),
                 aiPondering: Boolean(player.isAI && room.aiPondering && room.game?.turn !== colorForPlayer(room.game, id)),
               }
@@ -305,6 +320,8 @@ export class RoomManager {
       players: [client.id, null],
       spectators: new Set(),
       health: 14,
+      aiVersion: DEFAULT_AI_VERSION,
+      ruleIds: [],
       ready: new Set(),
       status: "waiting",
       game: null,
@@ -366,6 +383,7 @@ export class RoomManager {
       transport: null,
       disconnectTimer: null,
       isAI: true,
+      aiVersion: room.aiVersion,
     };
     this.clients.set(aiId, ai);
     room.players[emptySeat] = aiId;
@@ -373,6 +391,20 @@ export class RoomManager {
     this.broadcastRoom(room);
     this.broadcastLobby();
     this.notice(client, `${ai.nickname} 已入座`, "success");
+  }
+
+  setAIVersion(client, value) {
+    const room = this.requireRoom(client);
+    if (room.hostId !== client.id) throw new LobbyError("host_only", "只有房主可以选择 AI 版本");
+    if (room.status === "playing") throw new LobbyError("game_in_progress", "对局中不能更换 AI 版本");
+    const version = String(value ?? "");
+    if (normalizeAIVersion(version) !== version) throw new LobbyError("bad_ai_version", "AI 版本必须是 V1 或 V2");
+    const hasReadyHuman = [...room.ready].some((id) => !this.clients.get(id)?.isAI);
+    if (hasReadyHuman) throw new LobbyError("players_ready", "请先取消准备再更换 AI 版本");
+    room.aiVersion = version;
+    const aiId = room.players.find((id) => this.clients.get(id)?.isAI);
+    if (aiId) this.clients.get(aiId).aiVersion = version;
+    this.broadcastRoom(room);
   }
 
   removeAI(client) {
@@ -435,6 +467,22 @@ export class RoomManager {
     this.broadcastLobby();
   }
 
+  setRule(client, ruleId, enabled) {
+    const room = this.requireRoom(client);
+    if (room.hostId !== client.id) throw new LobbyError("host_only", "只有房主可以修改规则集");
+    if (room.status === "playing") throw new LobbyError("game_in_progress", "对局中不能修改规则集");
+    const hasReadyHuman = [...room.ready].some((id) => !this.clients.get(id)?.isAI);
+    if (hasReadyHuman) throw new LobbyError("players_ready", "请先取消准备再修改规则集");
+    const id = String(ruleId ?? "");
+    if (!ruleCatalog().some((rule) => rule.id === id)) throw new LobbyError("bad_rule", "未知扩展规则");
+    const next = new Set(room.ruleIds);
+    if (enabled) next.add(id);
+    else next.delete(id);
+    room.ruleIds = normalizeRuleIds([...next]);
+    this.broadcastRoom(room);
+    this.broadcastLobby();
+  }
+
   setReady(client, ready) {
     const room = this.requireRoom(client);
     if (!room.players.includes(client.id)) throw new LobbyError("spectator", "观战者不能准备");
@@ -461,12 +509,18 @@ export class RoomManager {
       turnDurationMs: this.turnDurationMs,
       rng: this.rng,
       now: this.now(),
+      ruleIds: room.ruleIds,
     });
     room.status = "playing";
     room.gameParticipants = Object.fromEntries(COLORS.map((color) => {
       const id = room.game.players[color];
       const player = this.clients.get(id);
-      return [color, { id, nickname: player?.nickname ?? "玩家", isAI: Boolean(player?.isAI) }];
+      return [color, {
+        id,
+        nickname: player?.nickname ?? "玩家",
+        isAI: Boolean(player?.isAI),
+        aiVersion: player?.isAI ? normalizeAIVersion(player.aiVersion ?? room.aiVersion) : null,
+      }];
     }));
     room.aiThinking = false;
     room.aiPondering = false;
@@ -522,6 +576,14 @@ export class RoomManager {
     board[21] = { ...makePiece("mouse", enemy, "qa-mouse"), revealed: true };
     board[25] = { ...makePiece("tiger", enemy, "qa-tiger"), revealed: true };
     board[29] = { ...makePiece("dog", color, "qa-dog"), revealed: true };
+    if (room.game.ruleIds.includes("snake")) {
+      board[24] = { ...makePiece("snake", color, "qa-snake"), revealed: true };
+    }
+    if (room.game.ruleIds.includes("football-poison")) {
+      board[20].poisoned = true;
+      board[20].poisonTurns = 2;
+      board[28] = { ...makePiece("football", enemy, "qa-poison-football"), revealed: true };
+    }
     room.game.board = board;
     room.game.turn = color;
     room.game.health = { blue: 3, red: 3 };
@@ -610,6 +672,7 @@ export class RoomManager {
       mode: "ponder",
       wallTimeMs: remainingTurnMs,
       seed,
+      aiVersion: room.aiVersion,
     }).then(() => {
       if (room.aiPonderJobId !== jobId) return;
       room.aiPonderJobId = null;
@@ -666,6 +729,7 @@ export class RoomManager {
     else movePiece(game, color, action.from, action.to, options);
     game.lastAction.isAI = true;
     game.lastAction.ai = {
+      version: normalizeAIVersion(result?.aiVersion ?? room.aiVersion),
       method: result?.method ?? "fallback",
       elapsedMs: Math.round(result?.elapsedMs ?? 0),
       iterations: result?.iterations ?? null,
@@ -705,10 +769,11 @@ export class RoomManager {
     room.aiThinking = true;
 
     if (this.aiSearchTimeMs <= 25) {
-      const result = chooseAIAction(publicState, color, {
+      const result = chooseVersionedAIAction(publicState, color, {
         timeLimitMs: this.aiSearchTimeMs,
         maxIterations: 96,
         seed,
+        aiVersion: room.aiVersion,
       });
       return this.applyAIResult(room, expectedVersion, color, result);
     }
@@ -723,22 +788,29 @@ export class RoomManager {
       timeLimitMs: this.aiSearchTimeMs,
       seed,
       initialResult,
+      aiVersion: room.aiVersion,
     }).then((result) => {
       const job = this.aiSearches.get(room.id);
       if (!job || job.jobId !== jobId) return;
       this.aiSearches.delete(room.id);
       room.aiThinking = false;
-      const fallback = () => chooseAIAction(publicState, color, { timeLimitMs: 20, maxIterations: 64, seed });
+      const fallback = () => chooseVersionedAIAction(publicState, color, {
+        timeLimitMs: 20,
+        maxIterations: 64,
+        seed,
+        aiVersion: room.aiVersion,
+      });
       this.applyAIResult(room, expectedVersion, color, result ?? fallback());
     }).catch(() => {
       const job = this.aiSearches.get(room.id);
       if (!job || job.jobId !== jobId) return;
       this.aiSearches.delete(room.id);
       room.aiThinking = false;
-      this.applyAIResult(room, expectedVersion, color, chooseAIAction(publicState, color, {
+      this.applyAIResult(room, expectedVersion, color, chooseVersionedAIAction(publicState, color, {
         timeLimitMs: 20,
         maxIterations: 64,
         seed,
+        aiVersion: room.aiVersion,
       }));
     });
     this.broadcastRoom(room);
@@ -750,7 +822,13 @@ export class RoomManager {
       if (room.status !== "playing" || !room.game) continue;
       if (processTurnTimeout(room.game, now)) {
         this.cancelAISearch(room);
-        this.scheduleAI(room, now);
+        if (room.game.status === "finished") {
+          room.status = "finished";
+          this.recordFinishedGame(room);
+          this.broadcastLobby();
+        } else {
+          this.scheduleAI(room, now);
+        }
         this.broadcastRoom(room);
       }
       if (!room.aiThinking && room.aiMoveAt !== null && now >= room.aiMoveAt) this.performAIAction(room, now);
@@ -799,8 +877,14 @@ export class RoomManager {
         case "remove_ai":
           this.removeAI(client);
           break;
+        case "set_ai_version":
+          this.setAIVersion(client, message.version);
+          break;
         case "set_health":
           this.setHealth(client, message.value);
+          break;
+        case "set_rule":
+          this.setRule(client, message.ruleId, Boolean(message.enabled));
           break;
         case "set_ready":
           this.setReady(client, Boolean(message.ready));
